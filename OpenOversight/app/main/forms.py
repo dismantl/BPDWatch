@@ -130,15 +130,16 @@ class LinkForm(Form):
         return success
 
 
-class BaseNoteForm(Form):
-    note = TextAreaField()
+class BaseTextForm(Form):
+    text_contents = TextAreaField()
+    description = "This information about the officer will be attributed to your username."
 
 
-class EditNoteForm(BaseNoteForm):
+class EditTextForm(BaseTextForm):
     submit = SubmitField(label='Submit')
 
 
-class NoteForm(EditNoteForm):
+class TextForm(EditTextForm):
     officer_id = HiddenField(validators=[Required(message='Not a valid officer ID')])
     creator_id = HiddenField(validators=[Required(message='Not a valid user ID')])
 
@@ -174,9 +175,15 @@ class AddOfficerForm(Form):
         min_entries=1,
         widget=BootstrapListWidget())
     notes = FieldList(FormField(
-        BaseNoteForm,
+        BaseTextForm,
         widget=FormFieldWidget()),
         description='This note about the officer will be attributed to your username.',
+        min_entries=1,
+        widget=BootstrapListWidget())
+    descriptions = FieldList(FormField(
+        BaseTextForm,
+        widget=FormFieldWidget()),
+        description='This description of the officer will be attributed to your username.',
         min_entries=1,
         widget=BootstrapListWidget())
 
