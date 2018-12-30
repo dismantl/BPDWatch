@@ -21,12 +21,13 @@ from ..utils import (grab_officers, roster_lookup, upload_file, compute_hash,
                      ac_can_edit_officer, add_department_query, add_unit_query,
                      create_incident, get_or_create, replace_list,
                      set_dynamic_default, create_note, get_uploaded_cropped_image,
-                     create_description, filter_by_form)
+                     create_description, filter_by_form, create_link)
 
 from .forms import (FindOfficerForm, FindOfficerIDForm, AddUnitForm,
                     FaceTag, AssignmentForm, DepartmentForm, AddOfficerForm,
                     EditOfficerForm, IncidentForm, TextForm, EditTextForm,
-                    AddImageForm, EditDepartmentForm, BrowseForm)
+                    AddImageForm, EditDepartmentForm, BrowseForm, LinkForm,
+                    EditLinkForm)
 from .model_view import ModelView
 from .choices import GENDER_CHOICES, RACE_CHOICES, RANK_CHOICES, AGE_CHOICES
 from ..models import (db, Image, User, Face, Officer, Assignment, Department,
@@ -382,9 +383,6 @@ def add_officer():
 def edit_officer(officer_id):
     officer = Officer.query.filter_by(id=officer_id).one()
     form = EditOfficerForm(obj=officer)
-    for link in form.links:
-        if not link.user_id.data:
-            link.user_id.data = current_user.id
 
     if current_user.is_area_coordinator and not current_user.is_administrator:
         if not ac_can_edit_officer(officer, current_user):
@@ -960,4 +958,78 @@ main.add_url_rule(
 main.add_url_rule(
     '/officer/<int:officer_id>/description/<int:obj_id>/delete',
     view_func=description_view,
+    methods=['GET', 'POST'])
+
+
+class LinkApi(ModelView):
+    model = Link
+    model_name = 'link'
+    form = LinkForm
+    create_function = create_link
+    department_check = True
+
+    def get_new_form(self):
+        form = self.form()
+        form.officer_id.data = self.officer_id
+        return form
+
+    def get_redirect_url(self, *args, **kwargs):
+        if getattr(self, 'incident_id', None):
+            return redirect(url_for('main.incident_api', obj_id=self.incident_id, _method='GET'))
+        return redirect(url_for('main.officer_profile', officer_id=self.officer_id))
+
+    def get_post_delete_url(self, *args, **kwargs):
+        return self.get_redirect_url()
+
+    def get_department_id(self, obj):
+        return self.department_id
+
+    def get_edit_form(self, obj):
+        if getattr(self, 'incident_id', None):
+            obj.incident_id = self.incident_id
+        form = EditLinkForm(obj=obj)
+        return form
+
+    def dispatch_request(self, *args, **kwargs):
+        if 'officer_id' in kwargs:
+            officer = Officer.query.get_or_404(kwargs['officer_id'])
+            self.officer_id = kwargs.pop('officer_id')
+            self.department_id = officer.department_id
+        elif 'incident_id' in kwargs:
+            self.incident_id = kwargs.pop('incident_id')
+        return super(LinkApi, self).dispatch_request(*args, **kwargs)
+
+
+link_view = LinkApi.as_view('link_api')
+main.add_url_rule(
+    '/officer/<int:officer_id>/link/new',
+    view_func=link_view,
+    methods=['GET', 'POST'])
+main.add_url_rule(
+    '/officer/<int:officer_id>/link/<int:obj_id>',
+    view_func=link_view,
+    methods=['GET'])
+main.add_url_rule(
+    '/officer/<int:officer_id>/link/<int:obj_id>/edit',
+    view_func=link_view,
+    methods=['GET', 'POST'])
+main.add_url_rule(
+    '/officer/<int:officer_id>/link/<int:obj_id>/delete',
+    view_func=link_view,
+    methods=['GET', 'POST'])
+main.add_url_rule(
+    '/incidents/<int:incident_id>/link/new',
+    view_func=link_view,
+    methods=['GET', 'POST'])
+main.add_url_rule(
+    '/incidents/<int:incident_id>/link/<int:obj_id>',
+    view_func=link_view,
+    methods=['GET'])
+main.add_url_rule(
+    '/incidents/<int:incident_id>/link/<int:obj_id>/edit',
+    view_func=link_view,
+    methods=['GET', 'POST'])
+main.add_url_rule(
+    '/incidents/<int:incident_id>/link/<int:obj_id>/delete',
+    view_func=link_view,
     methods=['GET', 'POST'])

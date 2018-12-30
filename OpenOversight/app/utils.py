@@ -414,6 +414,16 @@ def create_description(self, form):
         date_updated=datetime.datetime.now())
 
 
+def create_link(self, form):
+    return Link(
+        title=form.title.data,
+        url=form.url.data,
+        link_type=form.link_type.data,
+        description=form.description.data,
+        author=form.author.data,
+        user_id=form.user_id.data)
+
+
 def get_uploaded_cropped_image(original_image, crop_data):
     """ Takes an Image object and a cropping tuple (left, upper, right, lower), and returns a new Image object"""
 

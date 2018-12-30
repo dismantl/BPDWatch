@@ -1,77 +1,113 @@
 <div class='row'>
-	{% for type, list in obj.links|groupby('link_type') %}
-		{% if type == 'link' %}
-		<div class="col-sm-12 col-md-6">
-			<h3>Links</h3>
-			<ul class='list-group'>
-				{% for link in list %}
-					<li class='list-group-item'>
-						<a href="{{ link.url }}">{{ link.title or link.url }}</a>
-						{% if link.description or link.author %}
-							<div>
-								{% if link.description %}
-										{{ link.description }}
-								{% endif %}
-								{% if link.author %}
-									{% if link.description %}- {% endif %}<em>{{ link.author }}</em>
-								{% endif %}
-							</div>
-						{% endif %}
-					</li>
-				{% endfor %}
-			</ul>
-		</div>
-		{% endif %}
-		{% if type == 'video' %}
-		<div class="col-sm-12 col-md-6">
-			<h3>Videos</h3>
-			<ul class='list-group'>
-				{% for link in list %}
-					{% with link_url = link.url.split('v=')[1] %}
-						<li class='list-group-item'>
-							{% if link.title %}
-								<h5>{{ link.title }}</h5>
+	{% if 'link' in obj.links|map(attribute='link_type') %}
+	<div class="col-sm-12 col-md-6">
+		<h3>Links</h3>
+		<ul class='list-group'>
+			{% for link in obj.links|selectattr('link_type','equalto','link') %}
+				<li class='list-group-item'>
+					<a href="{{ link.url }}">{{ link.title or link.url }}</a>
+					{% if link.description or link.author %}
+						<div>
+							{% if link.description %}
+									{{ link.description }}
 							{% endif %}
-							<div class='video-container'>
-								<iframe width="560" height="315" src="https://www.youtube.com/embed/{{ link_url }}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-							</div>
-							{% if link.description or link.author %}
-								<div>
-									{% if link.description %}
-											{{ link.description }}
-									{% endif %}
-									{% if link.author %}
-										{% if link.description %}- {% endif %}<em>{{ link.author }}</em>
-									{% endif %}
-								</div>
+							{% if link.author %}
+								{% if link.description %}- {% endif %}<em>{{ link.author }}</em>
 							{% endif %}
-						</li>
-					{% endwith%}
-				{% endfor %}
-			</ul>
-		</div>
+							{% if link.user_id == current_user.id or current_user.is_administrator %}
+								{% if officer %}
+								  <a href="{{ url_for('main.link_api', officer_id=officer.id,
+													 obj_id=link.id) + '/edit' }}">
+								  <span class='sr-only'>Edit</span>
+								  <i class="fa fa-pencil-square-o" aria-hidden="true"></i>
+								  </a>
+								  <a href="{{ url_for('main.link_api', officer_id=officer.id,
+									 				 obj_id=link.id) + '/delete' }}">
+								  <span class='sr-only'>Delete</span>
+								  <i class="fa fa-trash-o" aria-hidden="true"></i>
+								  </a>
+								{% elif incident %}
+									<a href="{{ url_for('main.link_api', incident_id=incident.id,
+													 obj_id=link.id) + '/edit' }}">
+									<span class='sr-only'>Edit</span>
+									<i class="fa fa-pencil-square-o" aria-hidden="true"></i>
+									</a>
+									<a href="{{ url_for('main.link_api', incident_id=incident.id,
+													 obj_id=link.id) + '/delete' }}">
+									<span class='sr-only'>Delete</span>
+									<i class="fa fa-trash-o" aria-hidden="true"></i>
+									</a>
+								{% endif %}
+							{% endif %}
+						</div>
+					{% endif %}
+				</li>
+			{% endfor %}
+		</ul>
+		{% if current_user.is_administrator
+								or (current_user.is_area_coordinator and current_user.ac_department_id == officer.department_id) %}
+			{% if officer %}
+				<a href="{{ url_for('main.link_api', officer_id=officer.id) }}" class='btn btn-primary'>New link or video</a>
+			{% endif %}
 		{% endif %}
-		{% if type == 'other_video' %}
-		<div class="col-sm-12 col-md-6">
-			<h3>Other videos</h3>
-			<ul class='list-group'>
-				{% for link in list %}
-					<li class='list-group-item'>
-						<a href="{{ link.url }}">{{ link.title or link.url }}</a>
-						{% if link.description or link.author %}
-							<div>
-								{% if link.description %}
-										{{ link.description }}
-								{% endif %}
-								{% if link.author %}
-									{% if link.description %}- {% endif %}<em>{{ link.author }}</em>
-								{% endif %}
-							</div>
+	</div>
+	{% endif %}
+	{% if 'video' in obj.links|map(attribute='link_type') or 'other_video' in obj.links|map(attribute='link_type') %}
+	<div class="col-sm-12 col-md-6">
+		<h3>Videos</h3>
+		<ul class='list-group'>
+			{% for link in (obj.links|selectattr('link_type','equalto','video')|list + obj.links|selectattr('link_type','equalto','other_video')|list)|sort(attribute='link_type',reverse=True) %}
+				<li class='list-group-item'>
+					{% if link.link_type == 'video' %}
+						{% if link.title %}
+							<h5>{{ link.title }}</h5>
 						{% endif %}
-					</li>
-				{% endfor %}
-			</ul>
-		</div>
-		{% endif %}
-	{% endfor %}
+						{% with link_url = link.url.split('v=')[1] %}
+						<div class='video-container'>
+							<iframe width="560" height="315" src="https://www.youtube.com/embed/{{ link_url }}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+						</div>
+						{% endwith%}
+					{% else %}
+						<a href="{{ link.url }}">{{ link.title or link.url }}</a>
+					{% endif %}
+					{% if link.description or link.author %}
+						<div>
+							{% if link.description %}
+									{{ link.description }}
+							{% endif %}
+							{% if link.author %}
+								{% if link.description %}- {% endif %}<em>{{ link.author }}</em>
+							{% endif %}
+							{% if link.user_id == current_user.id or current_user.is_administrator %}
+								{% if officer %}
+								  <a href="{{ url_for('main.link_api', officer_id=officer.id,
+													 obj_id=link.id) + '/edit' }}">
+								  <span class='sr-only'>Edit</span>
+								  <i class="fa fa-pencil-square-o" aria-hidden="true"></i>
+								  </a>
+								  <a href="{{ url_for('main.link_api', officer_id=officer.id,
+									 				 obj_id=link.id) + '/delete' }}">
+								  <span class='sr-only'>Delete</span>
+								  <i class="fa fa-trash-o" aria-hidden="true"></i>
+								  </a>
+								{% elif incident %}
+									<a href="{{ url_for('main.link_api', incident_id=incident.id,
+													 obj_id=link.id) + '/edit' }}">
+									<span class='sr-only'>Edit</span>
+									<i class="fa fa-pencil-square-o" aria-hidden="true"></i>
+									</a>
+									<a href="{{ url_for('main.link_api', incident_id=incident.id,
+													 obj_id=link.id) + '/delete' }}">
+									<span class='sr-only'>Delete</span>
+									<i class="fa fa-trash-o" aria-hidden="true"></i>
+									</a>
+								{% endif %}
+							{% endif %}
+						</div>
+					{% endif %}
+				</li>
+			{% endfor %}
+		</ul>
+	</div>
+	{% endif %}
 </div> {# end row #}

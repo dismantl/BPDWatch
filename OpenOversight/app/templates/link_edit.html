@@ -1,0 +1,22 @@
+{% extends "form.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+
+{% block page_title %}
+	Update Link
+{% endblock page_title %}
+
+
+{% block form %}
+	{% if form.errors %}
+		{% set post_url=url_for('main.link_api', officer_id=obj.officer_id, obj_id=obj.id) %}
+	{% else %}
+		{% if obj.officer_id %}
+			{% set post_url="{}/edit".format(url_for('main.link_api', officer_id=obj.officer_id, obj_id=obj.id)) %}
+		{% elif obj.incident_id %}
+			{% set post_url="{}/edit".format(url_for('main.link_api', incident_id=obj.incident_id, obj_id=obj.id)) %}
+		{% endif %}
+	{% endif %}
+	{{ wtf.quick_form(form, action=post_url, method='post', button_map={'submit':'primary'}) }}
+	<br>
+{% endblock form %}

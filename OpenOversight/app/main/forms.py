@@ -122,6 +122,7 @@ class LinkForm(Form):
         'Link Type',
         choices=LINK_CHOICES,
         validators=[AnyOf(allowed_values(LINK_CHOICES))])
+    officer_id = HiddenField(validators=[Optional()], filters=[lambda x: x or None])
     user_id = HiddenField(validators=[Required(message='Not a valid user ID')])
 
     def validate(self):
@@ -132,6 +133,10 @@ class LinkForm(Form):
             success = False
 
         return success
+
+
+class EditLinkForm(LinkForm):
+    submit = SubmitField(label='Submit')
 
 
 class BaseTextForm(Form):
@@ -222,12 +227,6 @@ class EditOfficerForm(Form):
         validators=[Optional()],
         query_factory=dept_choices,
         get_label='name')
-    links = FieldList(FormField(
-        LinkForm,
-        widget=FormFieldWidget()),
-        description='Links to articles about or videos of the officer.',
-        min_entries=1,
-        widget=BootstrapListWidget())
     submit = SubmitField(label='Update')
 
 
