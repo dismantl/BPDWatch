@@ -1,23 +1,26 @@
 # Routing and view tests
+import csv
 import json
 import pytest
 import random
-from datetime import datetime
+from datetime import datetime, date
+from io import BytesIO
+from mock import patch, MagicMock
 from flask import url_for, current_app
 from ..conftest import AC_DEPT
-from OpenOversight.app.utils import dept_choices
+from OpenOversight.app.utils import add_new_assignment, dept_choices
 from OpenOversight.app.main.choices import RACE_CHOICES, GENDER_CHOICES
-from .route_helpers import login_admin, login_ac, process_form_data
+from .route_helpers import login_user, login_admin, login_ac, process_form_data
 
 
 from OpenOversight.app.main.forms import (AssignmentForm, DepartmentForm,
                                           AddOfficerForm, AddUnitForm,
                                           EditOfficerForm, LinkForm,
-                                          EditDepartmentForm, IncidentForm,
-                                          LocationForm, LicensePlateForm,
-                                          BrowseForm, SalaryForm)
+                                          EditDepartmentForm, SalaryForm,
+                                          LocationForm, BrowseForm, LicensePlateForm,
+                                          IncidentForm)
 
-from OpenOversight.app.models import Department, Unit, Officer, Incident, Assignment, Salary, Job
+from OpenOversight.app.models import Department, Unit, Officer, Assignment, Salary, Image, Incident, Job
 
 
 @pytest.mark.parametrize("route", [
@@ -889,6 +892,16 @@ def test_admin_can_add_new_officer_with_suffix(mockdata, client, session):
         assert officer.suffix == 'Jr'
 
 
+def test_ac_cannot_directly_upload_photos_of_of_non_dept_officers(mockdata, client, session):
+    with current_app.test_request_context():
+        login_ac(client)
+        department = Department.query.except_(Department.query.filter_by(id=AC_DEPT)).first()
+        rv = client.post(
+            url_for('main.upload', department_id=department.id, officer_id=department.officers[0].id)
+        )
+        assert rv.status_code == 403
+
+
 def test_officer_csv(mockdata, client, session):
     with current_app.test_request_context():
         login_admin(client)
@@ -902,8 +915,8 @@ def test_officer_csv(mockdata, client, session):
                               suffix='Jr',
                               race='WHITE',
                               gender='M',
-                              star_no=90009,
-                              job_title='PO',
+                              star_no='90009',
+                              job_title='2',
                               department=department.id,
                               birth_year=1910,
                               links=links)
@@ -913,20 +926,49 @@ def test_officer_csv(mockdata, client, session):
             data=process_form_data(form.data),
             follow_redirects=True
         )
-
         assert 'New Officer FVkcjigWUeUyA added' in rv.data.decode('utf-8')
 
         # dump officer csv
         rv = client.get(
-            url_for('main.download_dept_csv', department_id=department.id),
+            url_for('main.download_dept_officers_csv', department_id=department.id),
             follow_redirects=True
         )
-        # get csv entry matching officer last n"createdame
-        csv = list(filter(lambda row: form.last_name.data in row, rv.data.decode('utf-8').split("\n")))
-        assert len(csv) == 1
-        assert form.first_name.data in csv[0]
-        assert form.last_name.data in csv[0]
-        assert form.job_title.data in csv[0]
+
+        csv_data = rv.data.decode('utf-8')
+        csv_reader = csv.DictReader(csv_data.split("\n"))
+        added_lines = [row for row in csv_reader if row["last name"] == form.last_name.data]
+        assert len(added_lines) == 1
+        assert form.first_name.data == added_lines[0]["first name"]
+        assert Job.query.get(form.job_title.data).job_title == added_lines[0]["job title"]
+        assert form.star_no.data == added_lines[0]["badge number"]
+
+
+def test_assignments_csv(mockdata, client, session):
+    with current_app.test_request_context():
+        department = random.choice(dept_choices())
+        officer = Officer.query.filter_by(department_id=department.id).first()
+        job = (
+            Job
+            .query
+            .filter_by(department_id=department.id)
+            .filter(Job.job_title != "Not Sure")
+            .first())
+        form = AssignmentForm(star_no='9181', job_title=job, star_date=date(2020, 6, 16))
+        add_new_assignment(officer.id, form)
+        rv = client.get(
+            url_for('main.download_dept_assignments_csv', department_id=department.id),
+            follow_redirects=True
+        )
+        csv_data = rv.data.decode('utf-8')
+        csv_reader = csv.DictReader(csv_data.split("\n"))
+        lines = [row for row in csv_reader if int(row["officer id"]) == officer.id]
+        assert len(lines) == 2
+        assert lines[0]["officer unique identifier"] == officer.unique_internal_identifier
+        assert lines[1]["officer unique identifier"] == officer.unique_internal_identifier
+        new_assignment = [row for row in lines if row["badge number"] == form.star_no.data]
+        assert len(new_assignment) == 1
+        assert new_assignment[0]["start date"] == str(form.star_date.data)
+        assert new_assignment[0]["job title"] == job.job_title
 
 
 def test_incidents_csv(mockdata, client, session):
@@ -1078,7 +1120,6 @@ def test_browse_filtering_allows_good(client, mockdata, session):
             data=data,
             follow_redirects=True
         )
-
         filter_list = rv.data.decode('utf-8').split("<dt>Race</dt>")[1:]
         assert any("<dd>White</dd>" in token for token in filter_list)
 
@@ -1087,6 +1128,108 @@ def test_browse_filtering_allows_good(client, mockdata, session):
 
         filter_list = rv.data.decode('utf-8').split("<dt>Gender</dt>")[1:]
         assert any("<dd>Male</dd>" in token for token in filter_list)
+
+
+def test_admin_can_upload_photos_of_dept_officers(mockdata, client, session, test_jpg_BytesIO):
+    with current_app.test_request_context():
+        login_admin(client)
+
+        data = dict(file=(test_jpg_BytesIO, '204Cat.png'),)
+
+        department = Department.query.filter_by(id=AC_DEPT).first()
+        officer = department.officers[3]
+        officer_face_count = officer.face.count()
+
+        crop_mock = MagicMock(return_value=Image.query.first())
+        upload_mock = MagicMock(return_value=Image.query.first())
+        with patch('OpenOversight.app.main.views.upload_image_to_s3_and_store_in_db', upload_mock):
+            with patch('OpenOversight.app.main.views.crop_image', crop_mock):
+                rv = client.post(
+                    url_for('main.upload', department_id=department.id, officer_id=officer.id),
+                    content_type='multipart/form-data',
+                    data=data
+                )
+                assert rv.status_code == 200
+                assert b'Success' in rv.data
+                # check that Face was added to database
+                assert officer.face.count() == officer_face_count + 1
+
+
+def test_upload_photo_sends_500_on_s3_error(mockdata, client, session, test_png_BytesIO):
+    with current_app.test_request_context():
+        login_admin(client)
+
+        data = dict(file=(test_png_BytesIO, '204Cat.png'),)
+
+        department = Department.query.filter_by(id=AC_DEPT).first()
+        mock = MagicMock(return_value=None)
+        officer = department.officers[0]
+        officer_face_count = officer.face.count()
+        with patch('OpenOversight.app.main.views.upload_image_to_s3_and_store_in_db', mock):
+            rv = client.post(
+                url_for('main.upload', department_id=department.id, officer_id=officer.id),
+                content_type='multipart/form-data',
+                data=data
+            )
+            assert rv.status_code == 500
+            assert b'error' in rv.data
+            # check that Face was not added to database
+            assert officer.face.count() == officer_face_count
+
+
+def test_upload_photo_sends_415_for_bad_file_type(mockdata, client, session):
+    with current_app.test_request_context():
+        login_admin(client)
+        data = dict(file=(BytesIO(b'my file contents'), "test_cop1.png"),)
+        department = Department.query.filter_by(id=AC_DEPT).first()
+        officer = department.officers[0]
+        mock = MagicMock(return_value=False)
+        with patch('OpenOversight.app.main.views.allowed_file', mock):
+            rv = client.post(
+                url_for('main.upload', department_id=department.id, officer_id=officer.id),
+                content_type='multipart/form-data',
+                data=data
+            )
+        assert rv.status_code == 415
+        assert b'not allowed' in rv.data
+
+
+def test_user_cannot_upload_officer_photo(mockdata, client, session):
+    with current_app.test_request_context():
+        login_user(client)
+        data = dict(file=(BytesIO(b'my file contents'), "test_cop1.png"),)
+        department = Department.query.filter_by(id=AC_DEPT).first()
+        officer = department.officers[0]
+        rv = client.post(
+            url_for('main.upload', department_id=department.id, officer_id=officer.id),
+            content_type='multipart/form-data',
+            data=data
+        )
+        assert rv.status_code == 403
+        assert b'not authorized' in rv.data
+
+
+def test_ac_can_upload_photos_of_dept_officers(mockdata, client, session, test_png_BytesIO):
+    with current_app.test_request_context():
+        login_ac(client)
+        data = dict(file=(test_png_BytesIO, '204Cat.png'),)
+        department = Department.query.filter_by(id=AC_DEPT).first()
+        officer = department.officers[4]
+        officer_face_count = officer.face.count()
+
+        crop_mock = MagicMock(return_value=Image.query.first())
+        upload_mock = MagicMock(return_value=Image.query.first())
+        with patch('OpenOversight.app.main.views.upload_image_to_s3_and_store_in_db', upload_mock):
+            with patch('OpenOversight.app.main.views.crop_image', crop_mock):
+                rv = client.post(
+                    url_for('main.upload', department_id=department.id, officer_id=officer.id),
+                    content_type='multipart/form-data',
+                    data=data
+                )
+                assert rv.status_code == 200
+                assert b'Success' in rv.data
+                # check that Face was added to database
+                assert officer.face.count() == officer_face_count + 1
 
 
 def test_edit_officers_with_blank_uids(mockdata, client, session):
