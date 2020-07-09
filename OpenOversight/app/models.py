@@ -336,8 +336,6 @@ class Link(db.Model):
     author = db.Column(db.String(255), nullable=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'))
     creator = db.relationship('User', backref='links', lazy=True)
-    officer_id = db.Column(db.Integer, db.ForeignKey('officers.id', ondelete='CASCADE'), nullable=True)
-    officer = db.relationship('Officer', back_populates='links')
 
     @validates('url')
     def validate_url(self, key, url):
