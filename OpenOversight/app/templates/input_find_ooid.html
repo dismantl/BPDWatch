@@ -4,10 +4,10 @@
 <div class="container theme-showcase" role="main">
     {% if current_user and current_user.is_authenticated %}
       <div class="page-header">
-        <h2>Find an Officer's Sequence Number</h2>
+        <h2>Find an Officer's BPD Watch ID</h2>
       </div>
 
-      <p>Use the following form to put in the details you can see in the image. (It's okay if you can only see a partial name or badge number.)</p>
+      <p>Use the following form to put in the details you can see in the image. (It's okay if you can only see a partial nametag.)</p>
       <form action="{{ url_for('main.get_tagger_gallery') }}" method="post">
         {{ form.hidden_tag() }}
       <h4>Department: {{ form.dept }}</h4>
@@ -15,21 +15,15 @@
           <p><span style="color: red;">[{{ error }}]</span></p>
         {% endfor %}
 
-      <h4>What part, if any, of the officer's last name is visible?</h4>
+      <h4>What part, if any, of the officer's name is visible?</h4>
         {{ form.name }}
         {% for error in form.name.errors %}
           <p><span style="color: red;">[{{ error }}]</span></p>
         {% endfor %}
 
-      <h4>What part, if any, of the officer's badge number is visible?</h4>
-        {{ form.badge }}
-        {% for error in form.badge.errors %}
-          <p><span style="color: red;">[{{ error }}]</span></p>
-        {% endfor %}
-
         <br><br>
         <p>
-          <input class="btn btn-lg" type="submit" value="Lookup name/badge number in roster"/>
+          <input class="btn btn-lg" type="submit" value="Lookup name in roster"/>
         </p>
       </form>
 

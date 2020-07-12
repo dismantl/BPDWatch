@@ -1,13 +1,13 @@
-import datetime
+import csv
+from datetime import date
+import io
 import os
 import re
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import text
 import sys
-import tempfile
 from traceback import format_exc
-from werkzeug import secure_filename
 
 from flask import (abort, render_template, request, redirect, url_for,
                    flash, current_app, jsonify, Response)
@@ -15,14 +15,14 @@ from flask_login import current_user, login_required, login_user
 
 from . import main
 from .. import limiter
-from ..utils import (roster_lookup, upload_file, compute_hash,
-                     serve_image, compute_leaderboard_stats, get_random_image,
+from ..utils import (serve_image, compute_leaderboard_stats, get_random_image,
                      allowed_file, add_new_assignment, edit_existing_assignment,
                      add_officer_profile, edit_officer_profile,
                      ac_can_edit_officer, add_department_query, add_unit_query,
-                     create_incident, get_or_create, replace_list,
-                     set_dynamic_default, create_note, get_uploaded_cropped_image,
-                     create_description, filter_by_form, create_link)
+                     replace_list, create_note, set_dynamic_default,
+                     create_description, filter_by_form,
+                     crop_image, create_incident, get_or_create, dept_choices,
+                     upload_image_to_s3_and_store_in_db)
 
 from .forms import (FindOfficerForm, FindOfficerIDForm, AddUnitForm,
                     FaceTag, AssignmentForm, DepartmentForm, AddOfficerForm,
@@ -36,6 +36,7 @@ from ..models import (db, Image, User, Face, Officer, Assignment, Department,
 
 from ..auth.forms import LoginForm
 from ..auth.utils import admin_required, ac_or_admin_required
+from sqlalchemy.orm import contains_eager, joinedload
 
 # Ensure the file is read/write by the creator only
 SAVED_UMASK = os.umask(0o077)
@@ -61,6 +62,9 @@ def browse():
 def get_officer():
     jsloads = ['js/find_officer.js']
     form = FindOfficerForm()
+
+    depts_dict = [dept_choice.toCustomDict() for dept_choice in dept_choices()]
+
     if getattr(current_user, 'dept_pref_rel', None):
         set_dynamic_default(form.dept, current_user.dept_pref_rel)
 
@@ -77,7 +81,7 @@ def get_officer():
             badge=form.data['badge'],
             unique_internal_identifier=form.data['unique_internal_identifier']),
             code=302)
-    return render_template('input_find_officer.html', form=form, jsloads=jsloads)
+    return render_template('input_find_officer.html', form=form, depts_dict=depts_dict, jsloads=jsloads)
 
 
 @main.route('/tagger_find', methods=['GET', 'POST'])
@@ -129,7 +133,7 @@ def profile(username):
     else:
         abort(404)
     try:
-        pref = User.query.filter_by(id=current_user.id).one().dept_pref
+        pref = User.query.filter_by(id=current_user.get_id()).one().dept_pref
         department = Department.query.filter_by(id=pref).one().name
     except NoResultFound:
         department = None
@@ -328,7 +332,7 @@ def display_tag(tag_id):
 def classify_submission(image_id, contains_cops):
     try:
         image = Image.query.filter_by(id=image_id).one()
-        image.user_id = current_user.id
+        image.user_id = current_user.get_id()
         if contains_cops == 1:
             image.contains_cops = True
         elif contains_cops == 0:
@@ -405,19 +409,12 @@ def edit_department(department_id):
         department.short_name = form.short_name.data
         db.session.flush()
         if form.jobs.data:
-            current_ranks = Job.query.filter_by(
-                department_id=department_id,
-                is_sworn_officer=True
-            ).filter(Job.job_title != 'Not Sure').all()
             new_ranks = []
             order = 1
             for rank in form.data['jobs']:
                 if rank:
                     new_ranks.append((rank, order))
                     order += 1
-            for rank in current_ranks:
-                rank.order = None
-                rank.is_sworn_officer = False
             for (new_rank, order) in new_ranks:
                 existing_rank = Job.query.filter_by(department_id=department_id, job_title=new_rank).one_or_none()
                 if existing_rank:
@@ -534,7 +531,7 @@ def add_officer():
     set_dynamic_default(form.department, current_user.dept_pref_rel)
 
     if form.validate_on_submit() and not current_user.is_administrator and form.department.data.id != current_user.ac_department_id:
-            abort(403)
+        abort(403)
     if form.validate_on_submit():
         # Work around for WTForms limitation with boolean fields in FieldList
         new_formdata = request.form.copy()
@@ -544,7 +541,7 @@ def add_officer():
         form = AddOfficerForm(new_formdata)
         officer = add_officer_profile(form, current_user)
         flash('New Officer {} added to BPD Watch'.format(officer.last_name))
-        return redirect(url_for('main.officer_profile', officer_id=officer.id))
+        return redirect(url_for('main.submit_officer_images', officer_id=officer.id))
     else:
         return render_template('add_officer.html', form=form, jsloads=jsloads)
 
@@ -660,38 +657,38 @@ def label_data(department_id=None, image_id=None):
 
     form = FaceTag()
     if form.validate_on_submit():
-        officer_exists = Officer.query.filter_by(unique_internal_identifier=form.officer_id.data).first()
+        officer_exists = Officer.query.filter_by(id=form.officer_id.data).first()
+        existing_tag = db.session.query(Face) \
+                         .filter(Face.officer_id == form.officer_id.data) \
+                         .filter(Face.original_image_id == form.image_id.data).first()
         if not officer_exists:
             flash('Invalid officer ID. Please select a valid BPD Watch ID!')
-        else:
-            officer_id = officer_exists.id
-            existing_tag = db.session.query(Face) \
-                             .filter(Face.officer_id == officer_id) \
-                             .filter(Face.img_id == form.image_id.data).first()
+        elif not existing_tag:
+            left = form.dataX.data
+            upper = form.dataY.data
+            right = left + form.dataWidth.data
+            lower = upper + form.dataHeight.data
 
-            if not existing_tag:
-                left = form.dataX.data
-                upper = form.dataY.data
-                right = left + form.dataWidth.data
-                lower = upper + form.dataHeight.data
-                cropped_image = get_uploaded_cropped_image(image, (left, upper, right, lower))
+            cropped_image = crop_image(image, crop_data=(left, upper, right, lower), department_id=department_id)
+            cropped_image.contains_cops = True
+            cropped_image.is_tagged = True
 
-                if cropped_image:
-                    new_tag = Face(officer_id=officer_id,
-                                   img_id=cropped_image.id,
-                                   original_image_id=image.id,
-                                   face_position_x=left,
-                                   face_position_y=upper,
-                                   face_width=form.dataWidth.data,
-                                   face_height=form.dataHeight.data,
-                                   user_id=current_user.id)
-                    db.session.add(new_tag)
-                    db.session.commit()
-                    flash('Tag added to database')
-                else:
-                    flash('There was a problem saving this tag. Please try again later.')
+            if cropped_image:
+                new_tag = Face(officer_id=form.officer_id.data,
+                               img_id=cropped_image.id,
+                               original_image_id=image.id,
+                               face_position_x=left,
+                               face_position_y=upper,
+                               face_width=form.dataWidth.data,
+                               face_height=form.dataHeight.data,
+                               user_id=current_user.get_id())
+                db.session.add(new_tag)
+                db.session.commit()
+                flash('Tag added to database')
             else:
-                flash('Tag already exists between this officer and image! Tag not added.')
+                flash('There was a problem saving this tag. Please try again later.')
+        else:
+            flash('Tag already exists between this officer and image! Tag not added.')
 
     return render_template('cop_face.html', form=form,
                            image=image, path=proper_path,
@@ -720,13 +717,7 @@ def complete_tagging(image_id):
 def get_tagger_gallery(page=1):
     form = FindOfficerIDForm()
     if form.validate_on_submit():
-        OFFICERS_PER_PAGE = int(current_app.config['OFFICERS_PER_PAGE'])
-        form_data = form.data
-        officers = roster_lookup(form_data).paginate(page, OFFICERS_PER_PAGE, False)
-        return render_template('tagger_gallery.html',
-                               officers=officers,
-                               form=form,
-                               form_data=form_data)
+        return redirect(url_for('main.list_officer', department_id=form.dept.data.id, name=form.name.data))
     else:
         return redirect(url_for('main.get_ooid'), code=307)
 
@@ -747,14 +738,14 @@ def submit_data():
     preferred_dept_id = Department.query.first().id
     # try to use preferred department if available
     try:
-        if User.query.filter_by(id=current_user.id).one().dept_pref:
-            preferred_dept_id = User.query.filter_by(id=current_user.id).one().dept_pref
+        if User.query.filter_by(id=current_user.get_id()).one().dept_pref:
+            preferred_dept_id = User.query.filter_by(id=current_user.get_id()).one().dept_pref
             form = AddImageForm()
         else:
             form = AddImageForm()
         return render_template('submit_image.html', form=form, preferred_dept_id=preferred_dept_id)
     # that is, an anonymous user has no id attribute
-    except AttributeError:
+    except (AttributeError, NoResultFound):
         preferred_dept_id = Department.query.first().id
         form = AddImageForm()
         return render_template('submit_image.html', form=form, preferred_dept_id=preferred_dept_id)
@@ -769,7 +760,7 @@ def check_input(str_input):
 
 @main.route('/download/department/<int:department_id>', methods=['GET'])
 @limiter.limit('5/minute')
-def download_dept_csv(department_id):
+def deprecated_download_dept_csv(department_id):
     department = Department.query.filter_by(id=department_id).first()
     records = Officer.query.filter_by(department_id=department_id).all()
     if not department or not records:
@@ -802,6 +793,110 @@ def download_dept_csv(department_id):
     csv = first_row + "".join(record_list)
     csv_headers = {"Content-disposition": "attachment; filename=" + csv_name}
     return Response(csv, mimetype="text/csv", headers=csv_headers)
+
+
+def check_output(output_str):
+    if output_str == "Not Sure":
+        return ""
+    return output_str
+
+
+@main.route('/download/department/<int:department_id>/officers', methods=['GET'])
+@limiter.limit('5/minute')
+def download_dept_officers_csv(department_id):
+    department = Department.query.filter_by(id=department_id).first()
+    if not department:
+        abort(404)
+
+    officers = (db.session.query(Officer)
+                .options(joinedload(Officer.assignments_lazy)
+                         .joinedload(Assignment.job)
+                         )
+                .options(joinedload(Officer.salaries))
+                .filter_by(department_id=department_id)
+                )
+
+    if not officers:
+        abort(404)
+    csv_output = io.StringIO()
+    csv_fieldnames = ["id", "unique identifier", "last name", "first name", "middle initial", "suffix", "gender",
+                      "race", "birth year", "employment date", "badge number", "job title", "most recent salary"]
+    csv_writer = csv.DictWriter(csv_output, fieldnames=csv_fieldnames)
+    csv_writer.writeheader()
+
+    for officer in officers:
+        if officer.assignments_lazy:
+            most_recent_assignment = max(officer.assignments_lazy, key=lambda a: a.star_date or date.min)
+            most_recent_title = most_recent_assignment.job and check_output(most_recent_assignment.job.job_title)
+        else:
+            most_recent_assignment = None
+            most_recent_title = None
+        if officer.salaries:
+            most_recent_salary = max(officer.salaries, key=lambda s: s.year)
+        else:
+            most_recent_salary = None
+        record = {
+            "id": officer.id,
+            "unique identifier": officer.unique_internal_identifier,
+            "last name": officer.last_name,
+            "first name": officer.first_name,
+            "middle initial": officer.middle_initial,
+            "suffix": officer.suffix,
+            "gender": check_output(officer.gender),
+            "race": check_output(officer.race),
+            "birth year": officer.birth_year,
+            "employment date": officer.employment_date,
+            "badge number": most_recent_assignment and most_recent_assignment.star_no,
+            "job title": most_recent_title,
+            "most recent salary": most_recent_salary and most_recent_salary.salary,
+        }
+        csv_writer.writerow(record)
+
+    dept_name = department.name.replace(" ", "_")
+    csv_name = dept_name + "_Officers.csv"
+
+    csv_headers = {"Content-disposition": "attachment; filename=" + csv_name}
+    return Response(csv_output.getvalue(), mimetype="text/csv", headers=csv_headers)
+
+
+@main.route('/download/department/<int:department_id>/assignments', methods=['GET'])
+@limiter.limit('5/minute')
+def download_dept_assignments_csv(department_id):
+    department = Department.query.filter_by(id=department_id).first()
+    if not department:
+        abort(404)
+
+    assignments = (db.session.query(Assignment)
+                   .join(Assignment.job)
+                   .options(joinedload(Assignment.baseofficer))
+                   .options(joinedload(Assignment.unit))
+                   .options(contains_eager(Assignment.job))
+                   .filter_by(department_id=Job.department_id)
+                   )
+
+    csv_output = io.StringIO()
+    csv_fieldnames = ["officer id", "officer unique identifier", "badge number", "job title", "start date", "end date", "unit"]
+    csv_writer = csv.DictWriter(csv_output, fieldnames=csv_fieldnames)
+    csv_writer.writeheader()
+
+    for assignment in assignments:
+        officer = assignment.baseofficer
+        record = {
+            "officer id": assignment.officer_id,
+            "officer unique identifier": officer and officer.unique_internal_identifier,
+            "badge number": assignment.star_no,
+            "job title": check_output(assignment.job.job_title),
+            "start date": assignment.star_date,
+            "end date": assignment.resign_date,
+            "unit": assignment.unit and assignment.unit.descrip,
+        }
+        csv_writer.writerow(record)
+
+    dept_name = department.name.replace(" ", "_")
+    csv_name = dept_name + "_Assignments.csv"
+
+    csv_headers = {"Content-disposition": "attachment; filename=" + csv_name}
+    return Response(csv_output.getvalue(), mimetype="text/csv", headers=csv_headers)
 
 
 @main.route('/download/department/<int:department_id>/incidents', methods=['GET'])
@@ -838,62 +933,47 @@ def all_data():
     return render_template('all_depts.html', departments=departments)
 
 
+@main.route('/submit_officer_images/officer/<int:officer_id>', methods=['GET', 'POST'])
+@login_required
+@ac_or_admin_required
+def submit_officer_images(officer_id):
+    officer = Officer.query.get_or_404(officer_id)
+    return render_template('submit_officer_image.html', officer=officer)
+
+
 @main.route('/upload/department/<int:department_id>', methods=['POST'])
+@main.route('/upload/department/<int:department_id>/officer/<int:officer_id>', methods=['POST'])
 @limiter.limit('250/minute')
-def upload(department_id):
+def upload(department_id, officer_id=None):
+    if officer_id:
+        officer = Officer.query.filter_by(id=officer_id).first()
+        if not officer:
+            return jsonify(error='This officer does not exist.'), 404
+        if not (current_user.is_administrator or
+                (current_user.is_area_coordinator and officer.department_id == current_user.ac_department_id)):
+            return jsonify(error='You are not authorized to upload photos of this officer.'), 403
     file_to_upload = request.files['file']
     if not allowed_file(file_to_upload.filename):
         return jsonify(error="File type not allowed!"), 415
-    original_filename = secure_filename(file_to_upload.filename)
-    image_data = file_to_upload.read()
+    image = upload_image_to_s3_and_store_in_db(file_to_upload, current_user.get_id(), department_id=department_id)
 
-    # See if there is a matching photo already in the db
-    hash_img = compute_hash(image_data)
-    hash_found = Image.query.filter_by(hash_img=hash_img).first()
-    if hash_found:
-        return jsonify(error="Image already uploaded to BPD Watch!"), 400
-
-    # Generate new filename
-    file_extension = original_filename.split('.')[-1]
-    new_filename = '{}.{}'.format(hash_img, file_extension)
-
-    # Save temporarily on local filesystem
-    tmpdir = tempfile.mkdtemp()
-    safe_local_path = os.path.join(tmpdir, new_filename)
-    with open(safe_local_path, 'wb') as tmp:
-        tmp.write(image_data)
-    os.umask(SAVED_UMASK)
-
-    # Upload file from local filesystem to S3 bucket and delete locally
-    try:
-        url = upload_file(safe_local_path, original_filename,
-                          new_filename)
-        # Update the database to add the image
-        try:
-            new_image = Image(filepath=url, hash_img=hash_img, is_tagged=False,
-                              date_image_inserted=datetime.datetime.now(),
-                              department_id=department_id,
-                              # TODO: Get the following field from exif data
-                              date_image_taken=datetime.datetime.now(),
-                              user_id=current_user.id)
-        except AttributeError:
-            new_image = Image(filepath=url, hash_img=hash_img, is_tagged=False,
-                              date_image_inserted=datetime.datetime.now(),
-                              department_id=department_id,
-                              # TODO: Get the following field from exif data
-                              date_image_taken=datetime.datetime.now())
-        db.session.add(new_image)
-        db.session.commit()
-        return jsonify(success="Success!"), 200
-    except:  # noqa
-        exception_type, value, full_tback = sys.exc_info()
-        current_app.logger.error('Error uploading to S3: {}'.format(
-            ' '.join([str(exception_type), str(value),
-                      format_exc()])
-        ))
+    if image:
+        db.session.add(image)
+        if officer_id:
+            image.is_tagged = True
+            image.contains_cops = True
+            cropped_image = crop_image(image, department_id=department_id)
+            cropped_image.contains_cops = True
+            cropped_image.is_tagged = True
+            face = Face(officer_id=officer_id,
+                        img_id=cropped_image.id,
+                        original_image_id=image.id,
+                        user_id=current_user.get_id())
+            db.session.add(face)
+            db.session.commit()
+        return jsonify(success='Success!'), 200
+    else:
         return jsonify(error="Server error encountered. Try again later."), 500
-    os.remove(safe_local_path)
-    os.rmdir(tmpdir)
 
 
 @main.route('/about')
@@ -928,7 +1008,7 @@ class IncidentApi(ModelView):
 
     def get(self, obj_id):
         if request.args.get('page'):
-                page = int(request.args.get('page'))
+            page = int(request.args.get('page'))
         else:
             page = 1
         if request.args.get('department_id'):
@@ -1129,15 +1209,68 @@ main.add_url_rule(
     methods=['GET', 'POST'])
 
 
-class LinkApi(ModelView):
+# This API only applies to links attached to officer profiles, not links
+# attached to incidents.
+class OfficerLinkApi(ModelView):
     model = Link
     model_name = 'link'
     form = OfficerLinkForm
     department_check = True
-    create_function = create_link
+
+    @property
+    def officer(self):
+        if not hasattr(self, '_officer'):
+            self._officer = db.session.query(Officer).filter_by(id=self.officer_id).one()
+        return self._officer
+
+    @login_required
+    @ac_or_admin_required
+    def new(self, form=None):
+        if not current_user.is_administrator and current_user.ac_department_id != self.officer.department_id:
+            abort(403)
+        if not form:
+            form = self.get_new_form()
+            if hasattr(form, 'creator_id') and not form.creator_id.data:
+                form.creator_id.data = current_user.get_id()
+
+        if form.validate_on_submit():
+            link = Link(
+                title=form.title.data,
+                url=form.url.data,
+                link_type=form.link_type.data,
+                description=form.description.data,
+                author=form.author.data,
+                creator_id=form.creator_id.data)
+            self.officer.links.append(link)
+            db.session.add(link)
+            db.session.commit()
+            flash('{} created!'.format(self.model_name))
+            return self.get_redirect_url(obj_id=link.id)
+
+        return render_template('{}_new.html'.format(self.model_name), form=form)
+
+    @login_required
+    @ac_or_admin_required
+    def delete(self, obj_id):
+        obj = self.model.query.get_or_404(obj_id)
+        if not current_user.is_administrator and current_user.ac_department_id != self.get_department_id(obj):
+            abort(403)
+
+        if request.method == 'POST':
+            db.session.delete(obj)
+            db.session.commit()
+            flash('{} successfully deleted!'.format(self.model_name))
+            return self.get_post_delete_url()
+
+        return render_template('{}_delete.html'.format(self.model_name), obj=obj, officer_id=self.officer_id)
 
     def get_new_form(self):
         form = self.form()
+        form.officer_id.data = self.officer_id
+        return form
+
+    def get_edit_form(self, obj):
+        form = self.form(obj=obj)
         form.officer_id.data = self.officer_id
         return form
 
@@ -1147,25 +1280,26 @@ class LinkApi(ModelView):
     def get_post_delete_url(self, *args, **kwargs):
         return self.get_redirect_url()
 
+    def get_department_id(self, obj):
+        return self.officer.department_id
+
     def dispatch_request(self, *args, **kwargs):
         if 'officer_id' in kwargs:
             officer = Officer.query.get_or_404(kwargs['officer_id'])
             self.officer_id = kwargs.pop('officer_id')
             self.department_id = officer.department_id
-        return super(LinkApi, self).dispatch_request(*args, **kwargs)
+        return super(OfficerLinkApi, self).dispatch_request(*args, **kwargs)
 
 
-# This API only applies to links attached to officer profiles, not links
-# attached to incidents.
 main.add_url_rule(
     '/officer/<int:officer_id>/link/new',
-    view_func=LinkApi.as_view('link_api_new'),
+    view_func=OfficerLinkApi.as_view('link_api_new'),
     methods=['GET', 'POST'])
 main.add_url_rule(
     '/officer/<int:officer_id>/link/<int:obj_id>/edit',
-    view_func=LinkApi.as_view('link_api_edit'),
+    view_func=OfficerLinkApi.as_view('link_api_edit'),
     methods=['GET', 'POST'])
 main.add_url_rule(
     '/officer/<int:officer_id>/link/<int:obj_id>/delete',
-    view_func=LinkApi.as_view('link_api_delete'),
+    view_func=OfficerLinkApi.as_view('link_api_delete'),
     methods=['GET', 'POST'])

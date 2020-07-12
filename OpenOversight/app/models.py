@@ -1,8 +1,5 @@
 import re
-try:
-    from urllib.parse import urlparse
-except ImportError:
-    from urlparse import urlparse
+from urllib.parse import urlparse
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
@@ -18,6 +15,10 @@ from . import login_manager
 db = SQLAlchemy()
 
 
+officer_links = db.Table('officer_links',
+                         db.Column('officer_id', db.Integer, db.ForeignKey('officers.id'), primary_key=True),
+                         db.Column('link_id', db.Integer, db.ForeignKey('links.id'), primary_key=True))
+
 officer_incidents = db.Table('officer_incidents',
                              db.Column('officer_id', db.Integer, db.ForeignKey('officers.id'), primary_key=True),
                              db.Column('incident_id', db.Integer, db.ForeignKey('incidents.id'), primary_key=True))
@@ -28,9 +29,17 @@ class Department(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), index=True, unique=True, nullable=False)
     short_name = db.Column(db.String(100), unique=False, nullable=False)
+    unique_internal_identifier_label = db.Column(db.String(100), unique=False, nullable=True)
 
     def __repr__(self):
         return '<Department ID {}: {}>'.format(self.id, self.name)
+
+    def toCustomDict(self):
+        return {'id': self.id,
+                'name': self.name,
+                'short_name': self.short_name,
+                'unique_internal_identifier_label': self.unique_internal_identifier_label
+                }
 
 
 class Job(db.Model):
@@ -39,14 +48,12 @@ class Job(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     job_title = db.Column(db.String(255), index=True, unique=False, nullable=False)
     is_sworn_officer = db.Column(db.Boolean, index=True, default=True)
-    order = db.Column(db.Integer, index=True, unique=False, nullable=True)
+    order = db.Column(db.Integer, index=True, unique=False, nullable=False)
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'))
     department = db.relationship('Department', backref='jobs')
 
     __table_args__ = (UniqueConstraint('job_title', 'department_id',
-                      name='unique_department_job_titles'),
-                      UniqueConstraint('order', 'department_id',
-                      name='unique_department_job_order'), )
+                      name='unique_department_job_titles'), )
 
     def __repr__(self):
         return '<Job ID {}: {}>'.format(self.id, self.job_title)
@@ -94,11 +101,17 @@ class Officer(db.Model):
     employment_date = db.Column(db.Date, index=True, unique=False, nullable=True)
     birth_year = db.Column(db.Integer, index=True, unique=False, nullable=True)
     assignments = db.relationship('Assignment', backref='officer', lazy='dynamic')
+    assignments_lazy = db.relationship('Assignment')
     face = db.relationship('Face', backref='officer', lazy='dynamic')
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'))
     department = db.relationship('Department', backref='officers')
     unique_internal_identifier = db.Column(db.String(50), index=True, unique=True, nullable=True)
-    links = db.relationship('Link', back_populates='officer')
+    # we don't expect to pull up officers via link often so we make it lazy.
+    links = db.relationship(
+        'Link',
+        secondary=officer_links,
+        lazy='subquery',
+        backref=db.backref('officers', lazy=True))
     notes = db.relationship('Note', back_populates='officer', order_by='Note.date_created')
     descriptions = db.relationship('Description', back_populates='officer', order_by='Description.date_created')
     salaries = db.relationship('Salary', back_populates='officer', order_by='Salary.year.desc()')
@@ -110,7 +123,7 @@ class Officer(db.Model):
             else:
                 return '{} {}. {}'.format(self.first_name, self.middle_initial, self.last_name)
         if self.suffix:
-                return '{} {} {}'.format(self.first_name, self.last_name, self.suffix)
+            return '{} {} {}'.format(self.first_name, self.last_name, self.suffix)
         return '{} {}'.format(self.first_name, self.last_name)
 
     def race_label(self):
@@ -332,8 +345,6 @@ class Link(db.Model):
     author = db.Column(db.String(255), nullable=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'))
     creator = db.relationship('User', backref='links', lazy=True)
-    officer_id = db.Column(db.Integer, db.ForeignKey('officers.id', ondelete='CASCADE'), nullable=True)
-    officer = db.relationship('Officer', back_populates='links')
 
     @validates('url')
     def validate_url(self, key, url):

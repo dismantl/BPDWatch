@@ -9,7 +9,6 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 class BaseConfig(object):
     # DB SETUP
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_COMMIT_ON_TEARDOWN = True
 
     # pagination
     OFFICERS_PER_PAGE = os.environ.get('OFFICERS_PER_PAGE', 20)
@@ -37,10 +36,13 @@ class BaseConfig(object):
 
     # Upload Settings
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024
-    ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg', 'gif'])
+    ALLOWED_EXTENSIONS = set(['jpeg', 'jpg', 'jpe', 'png', 'gif'])
 
-    # User settings
+    # User registration settings
+    DISABLE_REGISTRATION = os.environ.get('DISABLE_REGISTRATION', False)
     APPROVE_REGISTRATIONS = os.environ.get('APPROVE_REGISTRATIONS', False)
+    RECAPTCHA_PUBLIC_KEY = os.environ.get('RECAPTCHA_V2_SITE_KEY')
+    RECAPTCHA_PRIVATE_KEY = os.environ.get('RECAPTCHA_V2_SECRET_KEY')
 
     SEED = 666
 
