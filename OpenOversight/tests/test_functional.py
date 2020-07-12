@@ -33,7 +33,7 @@ def test_user_can_load_homepage_and_get_to_form(mockdata, browser):
     browser.get("http://localhost:5000")
 
     # Complainant loads homepage
-    assert "OpenOversight" in browser.title
+    assert "BPD Watch" in browser.title
     with wait_for_page_load(browser):
         browser.find_element_by_id("cpd").click()
 
@@ -194,7 +194,7 @@ def test_find_officer_can_see_uii_question_for_depts_with_uiis(mockdata, browser
     browser.find_element_by_id("activate-step-2").click()
 
     page_text = browser.find_element_by_tag_name("body").text
-    assert "Do you know any part of the Officer's" in page_text
+    assert "Do you know the Officer's" in page_text
 
 
 def test_find_officer_cannot_see_uii_question_for_depts_without_uiis(mockdata, browser):

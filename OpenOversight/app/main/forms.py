@@ -79,7 +79,7 @@ class FindOfficerIDForm(Form):
 
 
 class FaceTag(Form):
-    officer_id = StringField('officer_id', validators=[Regexp('^\w\d\d\d$')])
+    officer_id = IntegerField('officer_id', validators=[DataRequired()])
     image_id = IntegerField('image_id', validators=[DataRequired()])
     dataX = IntegerField('dataX', validators=[InputRequired()])
     dataY = IntegerField('dataY', validators=[InputRequired()])

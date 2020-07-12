@@ -164,6 +164,11 @@ def test_ac_cannot_delete_tag_in_their_dept(mockdata, client, session):
 @patch('OpenOversight.app.utils.serve_image', MagicMock(return_value=PROJECT_ROOT + '/app/static/images/test_cop1.png'))
 def test_user_can_add_tag(mockdata, client, session):
     with current_app.test_request_context():
+        # Delete all existing tags
+        session.execute(
+            Face.__table__.delete())
+        session.commit()
+
         mock = MagicMock(return_value=Image.query.first())
         with patch('OpenOversight.app.main.views.crop_image', mock):
             officer = Officer.query.filter_by(department_id=1).first()

@@ -22,7 +22,7 @@ from ..utils import (serve_image, compute_leaderboard_stats, get_random_image,
                      replace_list, create_note, set_dynamic_default, roster_lookup,
                      create_description, filter_by_form,
                      crop_image, create_incident, get_or_create, dept_choices,
-                     upload_image_to_s3_and_store_in_db, create_link)
+                     upload_image_to_s3_and_store_in_db)
 
 from .forms import (FindOfficerForm, FindOfficerIDForm, AddUnitForm,
                     FaceTag, AssignmentForm, DepartmentForm, AddOfficerForm,
@@ -541,7 +541,7 @@ def add_officer():
         form = AddOfficerForm(new_formdata)
         officer = add_officer_profile(form, current_user)
         flash('New Officer {} added to BPD Watch'.format(officer.last_name))
-        return redirect(url_for('main.officer_profile', officer_id=officer.id))
+        return redirect(url_for('main.submit_officer_images', officer_id=officer.id))
     else:
         return render_template('add_officer.html', form=form, jsloads=jsloads)
 
@@ -657,7 +657,7 @@ def label_data(department_id=None, image_id=None):
 
     form = FaceTag()
     if form.validate_on_submit():
-        officer_exists = Officer.query.filter_by(unique_internal_identifier=form.officer_id.data).first()
+        officer_exists = Officer.query.filter_by(id=form.officer_id.data).first()
         existing_tag = db.session.query(Face) \
                          .filter(Face.officer_id == form.officer_id.data) \
                          .filter(Face.original_image_id == form.image_id.data).first()

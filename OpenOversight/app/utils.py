@@ -454,19 +454,6 @@ def create_description(self, form):
         date_updated=datetime.datetime.now())
 
 
-def create_link(self, form):
-    link = Link(
-        title=form.title.data,
-        url=form.url.data,
-        link_type=form.link_type.data,
-        description=form.description.data,
-        author=form.author.data,
-        creator_id=form.creator_id.data)
-    if hasattr(form, 'officer_id'):
-        link.officer_id = form.officer_id.data
-    return link
-
-
 def crop_image(image, crop_data=None, department_id=None):
     if 'http' in image.filepath:
         with urlopen(image.filepath) as response:

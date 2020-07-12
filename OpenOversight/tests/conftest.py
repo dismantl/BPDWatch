@@ -17,6 +17,7 @@ from PIL import Image as Pimage
 from OpenOversight.app import create_app, models
 from OpenOversight.app.utils import merge_dicts
 from OpenOversight.app.models import db as _db
+from OpenOversight.app.main.choices import RACE_CHOICES
 
 factory = Faker()
 
@@ -40,8 +41,7 @@ def pick_birth_date():
 
 
 def pick_race():
-    return random.choice(['WHITE', 'BLACK', 'HISPANIC', 'ASIAN',
-                          'PACIFIC ISLANDER', 'Not Sure'])
+    return random.choice(RACE_CHOICES)[0]
 
 
 def pick_gender():
