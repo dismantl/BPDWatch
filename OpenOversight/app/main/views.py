@@ -19,7 +19,7 @@ from ..utils import (serve_image, compute_leaderboard_stats, get_random_image,
                      allowed_file, add_new_assignment, edit_existing_assignment,
                      add_officer_profile, edit_officer_profile,
                      ac_can_edit_officer, add_department_query, add_unit_query,
-                     replace_list, create_note, set_dynamic_default, roster_lookup,
+                     replace_list, create_note, set_dynamic_default,
                      create_description, filter_by_form,
                      crop_image, create_incident, get_or_create, dept_choices,
                      upload_image_to_s3_and_store_in_db)
@@ -717,13 +717,7 @@ def complete_tagging(image_id):
 def get_tagger_gallery(page=1):
     form = FindOfficerIDForm()
     if form.validate_on_submit():
-        OFFICERS_PER_PAGE = int(current_app.config['OFFICERS_PER_PAGE'])
-        form_data = form.data
-        officers = roster_lookup(form_data).paginate(page, OFFICERS_PER_PAGE, False)
-        return render_template('tagger_gallery.html',
-                               officers=officers,
-                               form=form,
-                               form_data=form_data)
+        return redirect(url_for('main.list_officer', department_id=form.dept.data.id, name=form.name.data))
     else:
         return redirect(url_for('main.get_ooid'), code=307)
 

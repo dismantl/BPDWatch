@@ -62,12 +62,13 @@ def test_tagger_lookup(client, session):
         assert urlparse(rv.location).path == '/tagger_gallery'
 
 
-def test_tagger_gallery(client, session):
+def test_tagger_gallery(mockdata, client, session):
     with current_app.test_request_context():
-        form = FindOfficerIDForm(dept='')
+        department = Department.query.first()
+        form = FindOfficerIDForm(dept=department.id)
         assert form.validate() is True
         rv = client.post(url_for('main.get_tagger_gallery'), data=form.data)
-        assert rv.status_code == 200
+        assert rv.status_code == 302
 
 
 def test_tagger_gallery_bad_form(client, session):
