@@ -92,6 +92,7 @@ fabfile.py
 
 # Docker container volumes
 container_data
+*.iml
 .vscode/
 .vscode/**
 
