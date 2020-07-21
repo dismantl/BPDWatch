@@ -138,7 +138,6 @@
           {% endif %}
 	{% if officer.assignments.all() %}
           {% set assignment = officer.assignments.order_by(officer.assignments[0].__table__.c.star_date.desc()).first() %}
-	  {% set star_no = "#" + assignment.star_no %}
 	  {% set job_title = assignment.job.job_title %}
 	{% endif %}
         <li class="list-group-item">
