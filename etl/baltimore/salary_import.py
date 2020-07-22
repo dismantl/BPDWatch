@@ -13,7 +13,17 @@ from OpenOversight.app.models import db  # noqa E402
 app = create_app('development')
 db.app = app
 
-name_re = re.compile(r'^(?P<last_name>[a-zA-Z- \'\.]+?)(?:[ ,](?P<suffix>Jr|jr|Sr|sr|II|ii|2nd|III|iii|3rd|IV|iv)\.?)?,(?P<first_name>[a-zA-Z- \'\.]+?)(?: (?P<middle_initial>[A-Z])\.?)?$')
+suffixes = [
+    'Sr',
+    'Jr',
+    'II',
+    '2nd',
+    'III',
+    '3rd',
+    'IV',
+    '4th'
+]
+name_re = re.compile(r"^(?P<last_name>[a-zA-Z- '\.]+?)(?: (?P<suffix>(?i:" + r"|".join(suffixes) + r"))\.?)?,(?P<first_name>[a-zA-Z- '\.]+?)(?: (?P<middle_initial>[a-zA-Z])\.?)?$")
 
 NAME_COL = 0
 AGENCY_ID_COL = 2

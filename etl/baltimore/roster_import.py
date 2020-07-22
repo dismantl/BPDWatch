@@ -2,148 +2,180 @@ import pandas as pd
 import os
 import sys
 import csv
+import re
 from datetime import datetime
+from contextlib import contextmanager
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from OpenOversight.app import create_app, models  # noqa E402
 from OpenOversight.app.models import db  # noqa E402
 
+CSV_FILENAME = 'rosters/11-13-19_Employee_Demographics_for_Distribution.csv'
+DEPARTMENT_ID = 1
+
 app = create_app('development')
 db.app = app
 
-fieldnames = [
-    'department_id',
-    'unique_internal_identifier',
-    'first_name',
-    'last_name',
-    'middle_initial',
-    'suffix',
-    'gender',
-    'race',
-    'employment_date',
-    'birth_year',
-    'star_no',
-    'rank',
-    'unit',
-    'star_date',
-    'resign_date'
+jobs = []
+code_to_job = {}
+suffixes = [
+    'Sr',
+    'Jr',
+    'II',
+    '2nd',
+    'III',
+    '3rd',
+    'IV',
+    '4th'
 ]
-
-columns = {
-    # 'Location': 'location',
-    'EMPLID': 'employee_id',
-    'Last Name': 'last_name',
-    'First Name': 'first_name',
-    'Middle Name': 'middle_initial',
-    'SEX': 'sex',
-    'Ethnic Group': 'ethnic_group',
-    'Service Date': 'service_date',
-    'Rehire Date': 'rehire_date',
-    'Promotion Date': 'promotion_date',
-    'Job Code': 'job_code',
-    'Job Title': 'job_title',
-    'Supv ID': 'supervisor_employee_id',
-    # 'In Lieu': 'in_lieu',
-    'Position Number': 'position_number',
-    'Grade': 'grade',
-    'GL Pay Type': 'gl_pay_type',
-    # 'Locatlity': 'locality', # sic
-    'SEQ# (A99 only)': 'seq_no'
-    # 'SEQ#': 'seq_no'
-}
+name_re = re.compile(r"^(?P<last_name>[a-zA-Z- '\.]+?)(?: (?P<suffix>(?i:" + r"|".join(suffixes) + r"))\.?)?,(?P<first_name>[a-zA-Z- '\.]+?)(?: (?P<middle_initial>[a-zA-Z])\.?)?$")
+seq_no_re = re.compile(r"^[A-Z]\d\d\d$")
 
 
-def load(filename):
-    print("Importing raw roster", filename)
-    df = pd.read_excel(filename)
-    for column in columns.keys():
-        try:
-            assert column in df.columns
-        except AssertionError:
-            print('Did not find column {} in roster'.format(column))
-            raise
-    df.rename(columns=columns, inplace=True)
+def parse_name(row):
+    full_name = row['full_name']
+    matches = name_re.fullmatch(full_name)
     try:
-        df.to_sql('roster_raw', db.engine)
-    except ValueError:
-        print('Raw roster already imported')
+        last_name = matches.group('last_name')
+        suffix = matches.group('suffix')
+        first_name = matches.group('first_name')
+        middle_initial = matches.group('middle_initial')
+        assert first_name and last_name
+    except:
+        raise Exception(f'Unable to parse name {full_name}')
+    row['first_name'] = first_name
+    row['last_name'] = last_name
+    row['suffix'] = suffix
+
+    officer = models.Officer.query.filter_by(unique_internal_identifier=row['unique_internal_identifier']).one_or_none()
+    if officer and officer.middle_initial and len(officer.middle_initial) > len(middle_initial):
+        row['middle_initial'] = officer.middle_initial
     else:
-        print('Raw roster successfully imported')
+        row['middle_initial'] = middle_initial
+    return row
 
-    departments = models.Department.query.all()
-    bpd = None
-    for department in departments:
-        if department.name == 'Baltimore City Police Department':
-            print('Department already created')
-            bpd = department
-    if not bpd:
-        print("Creating department")
-        bpd = models.Department(name='Baltimore City Police Department',
-                                short_name='BPD')
-        db.session.add(bpd)
+
+def job_code_to_title(row):
+    job_code = row['job_code']
+    job_title = row['job_title']
+    try:
+        job_title = code_to_job[job_code]
+    except KeyError:
+        job_title = job_title.replace(' EID','')  # No need to keep the EID distinction in BPD Watch
+        if job_title not in jobs:
+            raise Exception(f"Job title not found: {job_title}")
+    else:
+        job_title = job_title.replace(' - EID','')
+    row['rank'] = job_title
+    return row
+
+
+def clean_gender(gender):
+    if gender == 'N':
+        gender = 'Not Sure'
+    return gender
+
+
+# Race not included in latest department-provided roster
+def int_to_race(rint):
+    if rint == 1:
+        race = 'White'
+    elif rint == 2:
+        race = 'Black or African American'
+    elif rint == 3:
+        race = 'Hispanic'
+    elif rint == 4:
+        race = 'Asian/Pacific Islander'
+    elif rint == 5:
+        race = 'American Indian/Alaska Native'
+    elif rint == 6:
+        race = 'Not Applicable (Non-U.S.)'
+    # elif rint == 7:
+    else:
+        race = 'Not Specified'
+    return race
+
+
+def clean_seq_no(row):
+    if row['full_name'] == 'Alleyne,Danelle L':
+        row['unique_internal_identifier'] = 'X666'
+    elif row['full_name'] == 'Nelson,Norman A':
+        row['unique_internal_identifier'] = 'Y666'
+    elif row['full_name'] == 'Harrison,Michael S':  # Why the fuck does the Police Commissioner not have a sequence number??
+        row['unique_internal_identifier'] = 'Z666'
+    row['unique_internal_identifier'] = row['unique_internal_identifier'].replace('-','')
+    if not seq_no_re.fullmatch(row['unique_internal_identifier']):
+        raise Exception(f"Invalid sequence number {row['unique_internal_identifier']}")
+    return row
+
+
+def clean_assignment_date(row):
+    assignment_date = None
+    if not isinstance(row['promotion_date'], float) and row['promotion_date'].strip():
+        assignment_date = datetime.strptime(row['promotion_date'], '%m/%d/%Y').date()
+    elif not isinstance(row['rehire_date'], float) and row['rehire_date'].strip():
+        assignment_date = datetime.strptime(row['rehire_date'], '%m/%d/%Y').date()
+    
+    if not isinstance(row['employment_date'], float) and row['employment_date'].strip() and not assignment_date:
+        assignment_date = datetime.strptime(row['employment_date'], '%m/%d/%Y').date()
+    
+    row['star_date'] = assignment_date
+    return row
+
+
+@contextmanager
+def transaction():
+    try:
+        yield
         db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
-    with open('export.csv', 'w', newline='') as csvf:
-        writer = csv.DictWriter(csvf, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        for pig in df.itertuples():
-            print(pig.seq_no)
-            assignment_date = None
-            if pig.promotion_date and pig.promotion_date != ' ' and type(pig.promotion_date) != float:
-                if type(pig.promotion_date) == str:
-                    assignment_date = datetime.strptime(pig.promotion_date, '%m/%d/%Y').date()
-                else:
-                    assignment_date = pig.promotion_date.date()
-            elif pig.rehire_date and pig.rehire_date != ' ' and type(pig.rehire_date) != float:
-                if type(pig.rehire_date) == str:
-                    assignment_date = datetime.strptime(pig.rehire_date, '%m/%d/%Y').date()
-                else:
-                    assignment_date = pig.rehire_date.date()
 
-            if pig.service_date and pig.service_date != ' ' and type(pig.service_date) != float:
-                if type(pig.service_date) == str:
-                    employment_date = datetime.strptime(pig.service_date, '%m/%d/%Y').date()
-                else:
-                    employment_date = pig.service_date.date()
-                if not assignment_date:
-                    assignment_date = employment_date
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
-            try:
-                rint = int(pig.ethnic_group)
-            except ValueError:
-                race = pig.ethnic_group
-            else:
-                if rint == 1:
-                    race = 'White'
-                elif rint == 2:
-                    race = 'Black or African American'
-                elif rint == 3:
-                    race = 'Hispanic'
-                elif rint == 4:
-                    race = 'Asian/Pacific Islander'
-                elif rint == 5:
-                    race = 'American Indian/Alaska Native'
-                elif rint == 6:
-                    race = 'Not Applicable (Non-U.S.)'
-                elif rint == 7:
-                    race = 'Not Specified'
 
-            writer.writerow({
-                'department_id': bpd.id,
-                'unique_internal_identifier': pig.seq_no,
-                'first_name': pig.first_name,
-                'middle_initial': pig.middle_initial if type(pig.middle_initial) == str else None,
-                'last_name': pig.last_name,
-                'gender': pig.sex,
-                'race': race,
-                'employment_date': employment_date,
-                'rank': pig.job_title,
-                'star_date': assignment_date
-            })
-
-    print("Finished data import!")
+def main():
+    eprint('Loading job codes and titles')
+    for filename in ['scraped_job_codes.csv', 'additional_job_codes.csv']:
+        with open(os.path.join(os.path.dirname(__file__), filename), 'r', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                code_to_job[int(row['Job Code'])] = row['Job Title']
+                jobs.append(row['Job Title'])
+    eprint("Importing raw roster", CSV_FILENAME)
+    dirty = pd.read_csv(os.path.join(os.path.dirname(__file__), CSV_FILENAME))
+    clean = pd.DataFrame()
+    clean['full_name'] = dirty['Name']
+    clean['unique_internal_identifier'] = dirty['SEQ#']
+    eprint('Cleaning sequence numbers')
+    clean = clean.apply(clean_seq_no, axis=1)
+    eprint('Parsing names')
+    clean = clean.apply(parse_name, axis=1)
+    eprint('Setting gender')
+    clean['gender'] = dirty['Gender'].apply(clean_gender)
+    eprint('Setting rank')
+    clean['job_code'] = dirty['Job Code']
+    clean['job_title'] = dirty['Job Title']
+    clean = clean.apply(job_code_to_title, axis=1)
+    clean['employment_date'] = dirty['Service Date']
+    clean['rehire_date'] = dirty['Rehire Date']
+    clean['promotion_date'] = dirty['Promotion Date']
+    eprint('Cleaning assignments')
+    clean.apply(clean_assignment_date, axis=1)
+    clean.insert(0, "department_id", DEPARTMENT_ID)
+    
+    del clean['full_name']
+    del clean['rehire_date']
+    del clean['promotion_date']
+    del clean['job_code']
+    del clean['job_title']
+    
+    clean.to_csv(sys.stdout, index=False)
 
 
 if __name__ == '__main__':
-    load(sys.argv[1])
+    main()
