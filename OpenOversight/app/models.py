@@ -165,7 +165,7 @@ class Salary(db.Model):
     is_fiscal_year = db.Column(db.Boolean, index=False, unique=False, nullable=False)
 
     def __repr__(self):
-        return '<Salary: ID {} : {}'.format(self.officer_id, self.salary)
+        return '<Salary: ID {} : {}>'.format(self.officer_id, self.salary)
 
 
 class Assignment(db.Model):
