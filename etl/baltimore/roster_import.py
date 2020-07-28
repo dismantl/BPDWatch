@@ -4,7 +4,7 @@ import sys
 import csv
 import re
 from datetime import datetime
-from contextlib import contextmanager
+from utils import name_re, eprint
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -19,17 +19,6 @@ db.app = app
 
 jobs = []
 code_to_job = {}
-suffixes = [
-    'Sr',
-    'Jr',
-    'II',
-    '2nd',
-    'III',
-    '3rd',
-    'IV',
-    '4th'
-]
-name_re = re.compile(r"^(?P<last_name>[a-zA-Z- '\.]+?)(?: (?P<suffix>(?i:" + r"|".join(suffixes) + r"))\.?)?,(?P<first_name>[a-zA-Z- '\.]+?)(?: (?P<middle_initial>[a-zA-Z])\.?)?$")
 seq_no_re = re.compile(r"^[A-Z]\d\d\d$")
 
 
@@ -120,22 +109,14 @@ def clean_assignment_date(row):
     if not isinstance(row['employment_date'], float) and row['employment_date'].strip() and not assignment_date:
         assignment_date = datetime.strptime(row['employment_date'], '%m/%d/%Y').date()
     
-    row['star_date'] = assignment_date
+    row['star_date'] = assignment_date.strftime('%Y-%m-%d')
     return row
 
 
-@contextmanager
-def transaction():
-    try:
-        yield
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise
-
-
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
+def clean_employment_date(data):
+    if data.strip():
+        data = datetime.strptime(data, '%m/%d/%Y').strftime('%Y-%m-%d')
+    return data
 
 
 def main():
@@ -152,20 +133,21 @@ def main():
     clean['full_name'] = dirty['Name']
     clean['unique_internal_identifier'] = dirty['SEQ#']
     eprint('Cleaning sequence numbers')
-    clean = clean.apply(clean_seq_no, axis=1)
+    clean = clean.apply(clean_seq_no, axis='columns')
     eprint('Parsing names')
-    clean = clean.apply(parse_name, axis=1)
+    clean = clean.apply(parse_name, axis='columns')
     eprint('Setting gender')
     clean['gender'] = dirty['Gender'].apply(clean_gender)
     eprint('Setting rank')
     clean['job_code'] = dirty['Job Code']
     clean['job_title'] = dirty['Job Title']
-    clean = clean.apply(job_code_to_title, axis=1)
+    clean = clean.apply(job_code_to_title, axis='columns')
     clean['employment_date'] = dirty['Service Date']
     clean['rehire_date'] = dirty['Rehire Date']
     clean['promotion_date'] = dirty['Promotion Date']
     eprint('Cleaning assignments')
-    clean.apply(clean_assignment_date, axis=1)
+    clean.apply(clean_assignment_date, axis='columns')
+    clean['employment_date'] = clean['employment_date'].apply(clean_employment_date)
     clean.insert(0, "department_id", DEPARTMENT_ID)
     
     del clean['full_name']
@@ -173,6 +155,7 @@ def main():
     del clean['promotion_date']
     del clean['job_code']
     del clean['job_title']
+
     
     clean.to_csv(sys.stdout, index=False)
 
