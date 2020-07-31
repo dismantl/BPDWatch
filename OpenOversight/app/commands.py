@@ -408,7 +408,7 @@ def bulk_add_officers(filename, no_create, update_by_name, update_static_fields)
                 create_officer_from_row(row, department_id)
 
         ImportLog.print_logs()
-        if prompt_yes_no("Do you want to commit the above changes?"):
+        if current_app.config['ENV'] == 'testing' or prompt_yes_no("Do you want to commit the above changes?"):
             print("Commiting changes.")
             db.session.commit()
         else:
