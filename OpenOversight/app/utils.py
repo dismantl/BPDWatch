@@ -569,8 +569,6 @@ def str_is_true(str_):
 
 
 def prompt_yes_no(prompt, default="no"):
-    valid = {"yes": True, "y": True, "ye": True,
-             "no": False, "n": False}
     if default is None:
         yn = " [y/n] "
     elif default == "yes":
