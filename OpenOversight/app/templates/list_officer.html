@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "bootstrap/wtf.html" as wtf %}
-
+{% block title %}Browse {{ department.name|title }} officers - OpenOversight{% endblock %}
+{% block meta %}<meta name="description" content="Browse or search for officers in the {{ department.name|title }}.">{% endblock %}
 {% block content %}
 <div class="container" role="main">
   <h1>{{ department.name|title }} Officers</h1>
@@ -131,19 +132,19 @@
     {% endwith %}
     <ul class="list-group">
       {% for officer in officers.items %}
-        {% if officer.face.first() is none %}
-            {% set officer_image = '/static/images/no_photos.svg' %}
-          {% else %}
-            {% set officer_image = officer.face.first().image.filepath %}
-          {% endif %}
-	{% if officer.assignments.all() %}
+        {% if officer.assignments.all() %}
           {% set assignment = officer.assignments.order_by(officer.assignments[0].__table__.c.star_date.desc()).first() %}
-	  {% set job_title = assignment.job.job_title %}
-	{% endif %}
+          {% if assignment is not none and assignment.star_no is not none %}
+            {% set star_no = "#" + assignment.star_no %}
+            {% set job_title = assignment.job.job_title %}
+          {% endif %}
+        {% endif %}
         <li class="list-group-item">
             <div class="row">
               <div class="col-md-6 col-xs-12">
-                <img src="{{ officer_image }}" class="img-responsive thumbnail{% if not officer.face.first() %} no-photos{% endif %}" alt="{% include 'partials/officer_name.html' %}">
+                <a href="{{ url_for('main.officer_profile', officer_id=officer.id) }}">
+                  <img src="{{ officer.image | default('/static/images/no_photo.svg') }}" class="img-responsive thumbnail{% if not officer.face.first() %} no-photos{% endif %}" alt="{% include 'partials/officer_name.html' %}">
+                </a>
               </div>
               <div class="col-md-6 col-xs-12">
                 <h2>
