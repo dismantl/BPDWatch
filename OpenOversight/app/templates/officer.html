@@ -5,7 +5,7 @@
   {% set description = 'See detailed information about ' ~ officer.full_name() ~ ', ' ~ job_title ~ ' of the ' ~ officer.department.name ~ '.' %}
   {% set image_url = officer.image_url | default(url_for('static', filename='images/placeholder.png', _external=True)) %}
   <meta name="description" content="{{ description }}">
-  <meta name="author" content="Lucy Parsons Labs">
+  <meta name="author" content="Open Justice Baltimore">
   <meta name="image" content="{{ image_url }}">
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary">
