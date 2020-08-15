@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ officer.full_name() }} - OpenOversight{% endblock %}
+{% block title %}{{ officer.full_name() }} - BPD Watch{% endblock %}
 {% block meta %}
   {% set job_title = officer.assignments[0].job.job_title if officer.assignments[0] and officer.assignments[0].job.job_title != 'Not Sure' else 'Employee' %}
   {% set description = 'See detailed information about ' ~ officer.full_name() ~ ', ' ~ job_title ~ ' of the ' ~ officer.department.name ~ '.' %}
@@ -9,7 +9,7 @@
   <meta name="image" content="{{ image_url }}">
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:site" content="@openoversight">
+  <meta name="twitter:site" content="@openjusticebalt">
   <meta name="twitter:title" content="{{ officer.full_name() }}">
   <meta name="twitter:description" content="{{ description }}">
   <meta name="twitter:image" content="{{ image_url }}">
@@ -26,7 +26,7 @@
   <meta property="og:image" content="{{ image_url }}">
   <meta property="og:url" content="{{ url_for(request.endpoint, officer_id=officer.id, _external=True) }}">
   <meta property="og:description" content="{{ description }}">
-  <meta property="og:site_name" content="OpenOversight">
+  <meta property="og:site_name" content="BPD Watch">
   <!-- JSON-LD -->
   <script type="application/ld+json">
   {
@@ -62,7 +62,7 @@
     "itemListElement": [{
       "@type": "ListItem",
       "position": 1,
-      "name": "OpenOversight",
+      "name": "BPD Watch",
       "item": "{{ url_for('main.index', _external=True)|replace('/index','') }}"
     },{
       "@type": "ListItem",
