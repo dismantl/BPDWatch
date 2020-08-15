@@ -245,7 +245,7 @@ def test_user_cannot_tag_officer_mismatched_with_department(mockdata, client, se
             data=form.data,
             follow_redirects=True
         )
-        assert b"The officer is not in Chicago Police Department. Are you sure that is the correct OpenOversight ID?" in rv.data
+        assert b"The officer is not in Chicago Police Department. Are you sure that is the correct BPD Watch ID?" in rv.data
 
 
 def test_user_can_finish_tagging(mockdata, client, session):
