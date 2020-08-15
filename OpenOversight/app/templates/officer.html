@@ -3,7 +3,7 @@
 {% block meta %}
   {% set job_title = officer.assignments[0].job.job_title if officer.assignments[0] and officer.assignments[0].job.job_title != 'Not Sure' else 'Employee' %}
   {% set description = 'See detailed information about ' ~ officer.full_name() ~ ', ' ~ job_title ~ ' of the ' ~ officer.department.name ~ '.' %}
-  {% set image_url = officer.image_url | default(url_for('static', filename='images/placeholder.png', _external=True)) %}
+  {% set image_url = officer.image_url | default(url_for('static', filename='images/no_photos.png', _external=True)) %}
   <meta name="description" content="{{ description }}">
   <meta name="author" content="Open Justice Baltimore">
   <meta name="image" content="{{ image_url }}">
