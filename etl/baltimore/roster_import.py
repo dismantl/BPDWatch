@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from OpenOversight.app import create_app, models  # noqa E402
 from OpenOversight.app.models import db  # noqa E402
 
-CSV_FILENAME = 'rosters/11-13-19_Employee_Demographics_for_Distribution.csv'
+CSV_FILENAME = 'rosters/HRIS_Employee_Demographics_Report_MPIA_20_0954_reviewed.csv'
 DEPARTMENT_ID = 1
 
 app = create_app('development')
@@ -19,9 +19,43 @@ db.app = app
 
 jobs = []
 code_to_job = {}
-seq_no_re = re.compile(r"^[A-Z]\d\d\d$")
+seq_no_re = re.compile(r"^[A-Z][\dA-Z]\d\d$")
+
+bad_seq_nos = [
+    'M857',
+    'T936'
+]
+
+bad_name_case = [
+    'T970',
+    'T969',
+    'M842'
+]
 
 
+def clean_name_capitalization(row):
+    if row['unique_internal_identifier'] in bad_name_case:
+        row['first_name'] = row['first_name'].title()
+        row['last_name'] = row['last_name'].title()
+    return row
+
+
+def clean_last_names(data):
+    if data == 'Bernardez Ruiz':
+        return 'Bernardez-Ruiz'
+    return data
+
+
+def clean_middle_initial(row):
+    row.fillna('', inplace=True)
+    officer = models.Officer.query.filter_by(unique_internal_identifier=row['unique_internal_identifier']).one_or_none()
+    middle_initial = row['middle_initial'].replace('.','')
+    if officer and officer.middle_initial and len(officer.middle_initial) > len(middle_initial):
+        row['middle_initial'] = officer.middle_initial
+    else:
+        row['middle_initial'] = middle_initial
+    return row
+    
 def parse_name(row):
     full_name = row['full_name']
     matches = name_re.fullmatch(full_name)
@@ -66,34 +100,27 @@ def clean_gender(gender):
     return gender
 
 
-# Race not included in latest department-provided roster
 def int_to_race(rint):
     if rint == 1:
-        race = 'White'
+        race = 'WHITE'
     elif rint == 2:
-        race = 'Black or African American'
+        race = 'BLACK'
     elif rint == 3:
-        race = 'Hispanic'
+        race = 'HISPANIC'
     elif rint == 4:
-        race = 'Asian/Pacific Islander'
+        race = 'ASIAN PACIFIC ISLANDER'
     elif rint == 5:
-        race = 'American Indian/Alaska Native'
+        race = 'NATIVE AMERICAN'
     elif rint == 6:
-        race = 'Not Applicable (Non-U.S.)'
+        race = 'Other'
     # elif rint == 7:
     else:
-        race = 'Not Specified'
+        race = 'Not Sure'
     return race
 
 
 def clean_seq_no(row):
-    if row['full_name'] == 'Alleyne,Danelle L':
-        row['unique_internal_identifier'] = 'X666'
-    elif row['full_name'] == 'Nelson,Norman A':
-        row['unique_internal_identifier'] = 'Y666'
-    elif row['full_name'] == 'Harrison,Michael S':  # Why the fuck does the Police Commissioner not have a sequence number??
-        row['unique_internal_identifier'] = 'Z666'
-    row['unique_internal_identifier'] = row['unique_internal_identifier'].replace('-','')
+    row['unique_internal_identifier'] = row['unique_internal_identifier'].replace('-','').upper()
     if not seq_no_re.fullmatch(row['unique_internal_identifier']):
         raise Exception(f"Invalid sequence number {row['unique_internal_identifier']}")
     return row
@@ -129,15 +156,23 @@ def main():
                 jobs.append(row['Job Title'])
     eprint("Importing raw roster", CSV_FILENAME)
     dirty = pd.read_csv(os.path.join(os.path.dirname(__file__), CSV_FILENAME))
+    eprint('Removing bad rows')
+    dirty = dirty[~dirty['SEQ# (A99 only)'].isin(bad_seq_nos)]
     clean = pd.DataFrame()
-    clean['full_name'] = dirty['Name']
-    clean['unique_internal_identifier'] = dirty['SEQ#']
+    clean['unique_internal_identifier'] = dirty['SEQ# (A99 only)']
     eprint('Cleaning sequence numbers')
     clean = clean.apply(clean_seq_no, axis='columns')
-    eprint('Parsing names')
-    clean = clean.apply(parse_name, axis='columns')
+    clean['first_name'] = dirty['First Name']
+    clean['last_name'] = dirty['Last Name'].apply(clean_last_names)
+    eprint('Cleaning name capitalization')
+    clean = clean.apply(clean_name_capitalization, axis='columns')
+    clean['middle_initial'] = dirty['Middle Name']
+    eprint('Cleaning middle names')
+    clean = clean.apply(clean_middle_initial, axis='columns')
     eprint('Setting gender')
-    clean['gender'] = dirty['Gender'].apply(clean_gender)
+    clean['gender'] = dirty['SEX'].apply(clean_gender)
+    eprint('Setting race')
+    clean['race'] = dirty['Ethnic Group'].apply(int_to_race)
     eprint('Setting rank')
     clean['job_code'] = dirty['Job Code']
     clean['job_title'] = dirty['Job Title']
@@ -150,7 +185,6 @@ def main():
     clean['employment_date'] = clean['employment_date'].apply(clean_employment_date)
     clean.insert(0, "department_id", DEPARTMENT_ID)
     
-    del clean['full_name']
     del clean['rehire_date']
     del clean['promotion_date']
     del clean['job_code']
