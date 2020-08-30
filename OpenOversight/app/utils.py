@@ -16,7 +16,7 @@ import sys
 from traceback import format_exc
 from distutils.util import strtobool
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.sql.expression import cast
 import imghdr as imghdr
 from flask import current_app, url_for
@@ -283,9 +283,16 @@ def filter_by_form(form, officer_query, department_id=None):
         )
 
     if form.get('unique_internal_identifier'):
-        officer_query = officer_query.filter(
-            Officer.unique_internal_identifier.ilike('%%{}%%'.format(form['unique_internal_identifier']))
-        )
+        if ',' in form['unique_internal_identifier']:
+            or_clauses = [
+                Officer.unique_internal_identifier.ilike('%%{}%%'.format(uii.strip()))
+                for uii in form['unique_internal_identifier'].split(',')
+            ]
+            officer_query = officer_query.filter(or_(*or_clauses))
+        else:
+            officer_query = officer_query.filter(
+                Officer.unique_internal_identifier.ilike('%%{}%%'.format(form['unique_internal_identifier']))
+            )
     race_values = [x for x, _ in RACE_CHOICES]
     if form.get('race') and all(race in race_values for race in form['race']):
         if 'Not Sure' in form['race']:
