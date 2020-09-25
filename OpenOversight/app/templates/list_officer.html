@@ -10,10 +10,10 @@
       <h3 class="sidebar-title">Filter officers</h3>
       <form class="form" method="get" role="form">
         <div class="panel">
-          <div class="panel-heading{% if not form_data['name'] %} collapsed{% endif %}" data-toggle="collapse" data-target="#filter-name">
+          <div class="panel-heading" data-toggle="collapse" data-target="#filter-name">
             <h3 class="panel-title accordion-toggle">Last name</h3>
           </div>
-          <div class="collapse{% if form_data['name'] %} in{% endif %}" id="filter-name">
+          <div class="collapse in" id="filter-name">
             <div class="panel-body">
               <div class="form-group">
                 <input type="text" class="form-control" id="name" name="name" value="{{ form_data['name'] or '' }}" />
@@ -22,10 +22,10 @@
           </div>
         </div>
         <!-- <div class="panel">
-          <div class="panel-heading{% if not form_data['badge'] %} collapsed{% endif %}" data-toggle="collapse" data-target="#filter-badge">
+          <div class="panel-heading" data-toggle="collapse" data-target="#filter-badge">
             <h3 class="panel-title accordion-toggle">Badge</h3>
           </div>
-          <div class="collapse{% if form_data['badge'] %} in{% endif %}" id="filter-badge">
+          <div class="collapse in" id="filter-badge">
             <div class="panel-body">
               <div class="form-group">
                 <input type="text" class="form-control" id="badge" name="badge" value="{{ form_data['badge'] or '' }}" />
@@ -34,10 +34,10 @@
           </div>
         </div> -->
         <div class="panel">
-          <div class="panel-heading{% if not form_data['unique_internal_identifier'] %} collapsed{% endif %}" data-toggle="collapse" data-target="#filter-unique_internal_identifier">
+          <div class="panel-heading" data-toggle="collapse" data-target="#filter-unique_internal_identifier">
             <h3 class="panel-title accordion-toggle">Sequence Number</h3>
           </div>
-          <div class="collapse{% if form_data['unique_internal_identifier'] %} in{% endif %}" id="filter-unique_internal_identifier">
+          <div class="collapse in" id="filter-unique_internal_identifier">
             <div class="panel-body">
               <div class="form-group">
                 <input type="text" class="form-control" id="unique_internal_identifier" name="unique_internal_identifier" value="{{ form_data['unique_internal_identifier'] or '' }}" />
