@@ -649,7 +649,7 @@ h1, h2, h3 {
 }
 
 .search-results .top-sort .sort.form-group {
-    max-width: 250px;
+    max-width: 260px;
     margin: 0 0 0 auto;
     display: block;
 }
