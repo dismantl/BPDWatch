@@ -1,14 +1,8 @@
 {% extends "list.html" %}
-{% block title -%}
-	{%- if objects.items|length > 0 -%}
-		View all incidents for {{ objects.items[0].department.name }} - BPD Watch
-	{%- else -%}
-		No Incidents Found
-	{%- endif -%}
-{% endblock %}
+{% block title %}View incidents - BPD Watch{% endblock %}
 {% block meta %}
 	{% if objects.items|length > 0 %}
-		<meta name="description" content="View all incidents for {{ objects.items[0].department.name }}.">
+		<meta name="description" content="View all incidents for {{ department.name if department else 'BPD Watch' }}.">
 	{% else %}
 		<meta name="description" content="No incidents found.">
 	{% endif %}

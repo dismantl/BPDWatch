@@ -26,7 +26,8 @@ from ..utils import (serve_image, compute_leaderboard_stats, get_random_image,
 from .forms import (FindOfficerForm, FindOfficerIDForm, AddUnitForm,
                     FaceTag, AssignmentForm, DepartmentForm, AddOfficerForm,
                     EditOfficerForm, IncidentForm, TextForm, EditTextForm,
-                    AddImageForm, EditDepartmentForm, BrowseForm, SalaryForm, OfficerLinkForm)
+                    AddImageForm, EditDepartmentForm, BrowseForm, SalaryForm,
+                    OfficerLinkForm)
 from .model_view import ModelView
 from .choices import GENDER_CHOICES, RACE_CHOICES, AGE_CHOICES
 from ..models import (db, Image, User, Face, Officer, Assignment, Department,
@@ -93,7 +94,7 @@ def get_officer():
             unit=form.data['unit'] if form.data['unit'] != 'Not Sure' else None,
             min_age=form.data['min_age'],
             max_age=form.data['max_age'],
-            name=form.data['name'],
+            last_name=form.data['last_name'],
             badge=form.data['badge'],
             unique_internal_identifier=form.data['unique_internal_identifier']),
             code=302)
@@ -497,8 +498,8 @@ def edit_department(department_id):
 
 
 @main.route('/department/<int:department_id>')
-def list_officer(department_id, page=1, race=[], gender=[], rank=[], min_age='16', max_age='100', name=None,
-                 badge=None, unique_internal_identifier=None, unit=None):
+def list_officer(department_id, page=1, order=0, race=[], gender=[], rank=[], min_age='16', max_age='100', last_name=None,
+                 first_name=None, badge=None, unique_internal_identifier=None, unit=None, photo=[], min_pay=None, max_pay=None):
     form = BrowseForm()
     form.rank.query = Job.query.filter_by(department_id=department_id, is_sworn_officer=True).order_by(Job.order.asc()).all()
     form_data = form.data
@@ -507,10 +508,14 @@ def list_officer(department_id, page=1, race=[], gender=[], rank=[], min_age='16
     form_data['rank'] = rank
     form_data['min_age'] = min_age
     form_data['max_age'] = max_age
-    form_data['name'] = name
+    form_data['last_name'] = last_name
+    form_data['first_name'] = first_name
     form_data['badge'] = badge
     form_data['unit'] = unit
     form_data['unique_internal_identifier'] = unique_internal_identifier
+    form_data['photo'] = photo
+    form_data['min_pay'] = min_pay
+    form_data['max_pay'] = max_pay
 
     OFFICERS_PER_PAGE = int(current_app.config['OFFICERS_PER_PAGE'])
     department = Department.query.filter_by(id=department_id).first()
@@ -524,8 +529,13 @@ def list_officer(department_id, page=1, race=[], gender=[], rank=[], min_age='16
         form_data['max_age'] = request.args.get('max_age')
     if request.args.get('page'):
         page = int(request.args.get('page'))
-    if request.args.get('name'):
-        form_data['name'] = request.args.get('name')
+    if request.args.get('order'):
+        order = int(request.args.get('order'))
+        form_data['order'] = order
+    if request.args.get('last_name'):
+        form_data['last_name'] = request.args.get('last_name')
+    if request.args.get('first_name'):
+        form_data['first_name'] = request.args.get('first_name')
     if request.args.get('badge'):
         form_data['badge'] = request.args.get('badge')
     if request.args.get('unit') and request.args.get('unit') != 'Not Sure':
@@ -536,13 +546,20 @@ def list_officer(department_id, page=1, race=[], gender=[], rank=[], min_age='16
         form_data['race'] = request.args.getlist('race')
     if request.args.get('gender') and all(gender in [gc[0] for gc in GENDER_CHOICES] for gender in request.args.getlist('gender')):
         form_data['gender'] = request.args.getlist('gender')
+    if request.args.get('photo') and all(photo in ['0', '1'] for photo in request.args.getlist('photo')):
+        form_data['photo'] = request.args.getlist('photo')
+    if request.args.get('min_pay') and re.fullmatch(r'\d+(\.\d\d)?', request.args.get('min_pay')):
+        form_data['min_pay'] = request.args.get('min_pay')
+    if request.args.get('max_pay') and re.fullmatch(r'\d+(\.\d\d)?', request.args.get('max_pay')):
+        form_data['max_pay'] = request.args.get('max_pay')
 
-    unit_choices = [(unit.id, unit.descrip) for unit in Unit.query.filter_by(department_id=department_id).all()]
+    unit_choices = [(unit.id, unit.descrip) for unit in Unit.query.filter_by(department_id=department_id).order_by(Unit.descrip.asc()).all()]
     rank_choices = [jc[0] for jc in db.session.query(Job.job_title, Job.order).filter_by(department_id=department_id, is_sworn_officer=True).order_by(Job.order).all()]
     if request.args.get('rank') and all(rank in rank_choices for rank in request.args.getlist('rank')):
         form_data['rank'] = request.args.getlist('rank')
 
-    officers = filter_by_form(form_data, Officer.query, department_id).filter(Officer.department_id == department_id).order_by(Officer.last_name).paginate(page, OFFICERS_PER_PAGE, False)
+    officers = filter_by_form(form_data, Officer.query, department_id, order).filter(Officer.department_id == department_id)
+    officers = officers.paginate(page, OFFICERS_PER_PAGE, False)
     for officer in officers.items:
         officer_face = officer.face.order_by(Face.featured.desc()).first()
         if officer_face:
@@ -555,13 +572,28 @@ def list_officer(department_id, page=1, race=[], gender=[], rank=[], min_age='16
         'unit': [('Not Sure', 'Not Sure')] + unit_choices
     }
 
+    def gen_pagination_url(page):
+        return url_for('main.list_officer', department_id=department.id,
+                       page=officers.next_num, order=order, race=form_data['race'], gender=form_data['gender'], rank=form_data['rank'],
+                       min_age=form_data['min_age'], max_age=form_data['max_age'], last_name=form_data['last_name'],
+                       first_name=form_data['first_name'], badge=form_data['badge'],
+                       unique_internal_identifier=form_data['unique_internal_identifier'], unit=form_data['unit'])
+    prev_url = gen_pagination_url(page=officers.prev_num)
+    next_url = gen_pagination_url(page=officers.next_num)
+    first_url = gen_pagination_url(page=1)
+    last_url = gen_pagination_url(page=officers.pages)
+
     return render_template(
         'list_officer.html',
         form=form,
         department=department,
         officers=officers,
         form_data=form_data,
-        choices=choices)
+        choices=choices,
+        next_url=next_url,
+        prev_url=prev_url,
+        first_url=first_url,
+        last_url=last_url)
 
 
 @main.route('/department/<int:department_id>/ranks')
@@ -621,6 +653,12 @@ def edit_officer(officer_id):
     jsloads = ['js/dynamic_lists.js']
     officer = Officer.query.filter_by(id=officer_id).one()
     form = EditOfficerForm(obj=officer)
+
+    if request.method == 'GET':
+        if officer.race is None:
+            form.race.data = 'Not Sure'
+        if officer.gender is None:
+            form.gender.data = 'Not Sure'
 
     if current_user.is_area_coordinator and not current_user.is_administrator:
         if not ac_can_edit_officer(officer, current_user):
@@ -1328,9 +1366,9 @@ main.add_url_rule(
     methods=['GET', 'POST'])
 
 
-# This API only applies to links attached to officer profiles, not links
-# attached to incidents.
 class OfficerLinkApi(ModelView):
+    '''This API only applies to links attached to officer profiles, not links attached to incidents'''
+
     model = Link
     model_name = 'link'
     form = OfficerLinkForm

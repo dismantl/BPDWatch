@@ -37,16 +37,16 @@ class HumintContribution(Form):
 
 
 class FindOfficerForm(Form):
-    name = StringField(
-        'name', default='', validators=[Regexp(r'\w*'), Length(max=50),
-                                        Optional()]
+    last_name = StringField(
+        'last_name', default='', validators=[Regexp(r'\w*'), Length(max=50),
+                                             Optional()]
     )
     badge = StringField('badge', default='', validators=[Regexp(r'\w*'),
                                                          Length(max=10)])
     unique_internal_identifier = StringField('unique_internal_identifier', default='', validators=[Regexp(r'\w*'), Length(max=55)])
     dept = QuerySelectField('dept', validators=[DataRequired()],
                             query_factory=dept_choices, get_label='name')
-    unit = SelectField('unit', default='Not Sure', validators=[Optional()])
+    unit = StringField('unit', default='Not Sure', validators=[Optional()])
     rank = StringField('rank', default='Not Sure', validators=[Optional()])  # Gets rewritten by Javascript
     race = SelectField('race', default='Not Sure', choices=RACE_CHOICES,
                        validators=[AnyOf(allowed_values(RACE_CHOICES))])
@@ -57,12 +57,6 @@ class FindOfficerForm(Form):
     ])
     max_age = IntegerField('max_age', default=85, validators=[
         NumberRange(min=16, max=100)
-    ])
-    latitude = DecimalField('latitude', default=False, validators=[
-        NumberRange(min=-90, max=90)
-    ])
-    longitude = DecimalField('longitude', default=False, validators=[
-        NumberRange(min=-180, max=180)
     ])
 
 
@@ -203,7 +197,7 @@ class AddOfficerForm(Form):
     star_no = StringField('Badge Number', default='', validators=[
         Regexp(r'\w*'), Length(max=50)])
     unique_internal_identifier = StringField('Unique Internal Identifier', default='', validators=[Regexp(r'\w*'), Length(max=50)])
-    job_title = StringField('Job Title')  # Gets rewritten by Javascript
+    job_id = StringField('Job ID')  # Gets rewritten by Javascript
     unit = QuerySelectField('Unit', validators=[Optional()],
                             query_factory=unit_choices, get_label='descrip',
                             allow_blank=True, blank_text=u'None')
@@ -384,7 +378,8 @@ class IncidentForm(DateFieldForm):
 class BrowseForm(Form):
     rank = QuerySelectField('rank', validators=[Optional()], get_label='job_title',
                             get_pk=lambda job: job.job_title)  # query set in view function
-    name = StringField('Last name')
+    last_name = StringField('Last name')
+    first_name = StringField('First name')
     badge = StringField('Badge number')
     unique_internal_identifier = StringField('Unique ID')
     race = SelectField('race', default='Not Sure', choices=RACE_CHOICES,
@@ -395,4 +390,7 @@ class BrowseForm(Form):
                           validators=[AnyOf(allowed_values(AGE_CHOICES))])
     max_age = SelectField('maximum age', default=100, choices=AGE_CHOICES,
                           validators=[AnyOf(allowed_values(AGE_CHOICES))])
+    photo = SelectField('photo', validators=[Optional(), AnyOf(['0', '1'])])
+    min_pay = DecimalField('min_pay', validators=[Optional(), NumberRange(min=0, max=1000000), validate_money])
+    max_pay = DecimalField('min_pay', validators=[Optional(), NumberRange(min=0, max=1000000), validate_money])
     submit = SubmitField(label='Submit')

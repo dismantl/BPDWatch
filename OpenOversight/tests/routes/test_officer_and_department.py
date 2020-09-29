@@ -1,4 +1,5 @@
 # Routing and view tests
+import re
 import csv
 import copy
 import json
@@ -650,7 +651,7 @@ def test_admin_can_add_new_officer(mockdata, client, session):
                               race='WHITE',
                               gender='M',
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1990,
                               links=links)
@@ -689,7 +690,7 @@ def test_admin_can_add_new_officer_with_unit(mockdata, client, session):
                               race='WHITE',
                               gender='M',
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               unit=unit.id,
                               department=department.id,
                               birth_year=1990,
@@ -730,7 +731,7 @@ def test_ac_can_add_new_officer_in_their_dept(mockdata, client, session):
                               race=race,
                               gender=gender,
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1990)
 
@@ -770,7 +771,7 @@ def test_ac_can_add_new_officer_with_unit_in_their_dept(mockdata, client, sessio
                               race=race,
                               gender=gender,
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               department=department.id,
                               unit=unit.id,
                               birth_year=1990)
@@ -811,7 +812,7 @@ def test_ac_cannot_add_new_officer_not_in_their_dept(mockdata, client, session):
                               race=race,
                               gender=gender,
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1990)
 
@@ -845,7 +846,7 @@ def test_admin_can_edit_existing_officer(mockdata, client, session):
                               race='WHITE',
                               gender='M',
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               department=department.id,
                               unit=unit.id,
                               birth_year=1990,
@@ -929,6 +930,7 @@ def test_ac_can_edit_officer_in_their_dept(mockdata, client, session):
         suffix = ''
         race = random.choice(RACE_CHOICES)[0]
         gender = random.choice(GENDER_CHOICES)[0]
+        job = Job.query.filter_by(department_id=department.id).first()
         form = AddOfficerForm(first_name=first_name,
                               last_name=last_name,
                               middle_initial=middle_initial,
@@ -936,7 +938,7 @@ def test_ac_can_edit_officer_in_their_dept(mockdata, client, session):
                               race=race,
                               gender=gender,
                               star_no=666,
-                              job_title='COMMANDER',
+                              job_id=job.id,
                               department=department.id,
                               unit=unit.id,
                               birth_year=1990)
@@ -983,12 +985,13 @@ def test_admin_adds_officer_without_middle_initial(mockdata, client, session):
         login_admin(client)
 
         department = random.choice(dept_choices())
+        job = Job.query.filter_by(department_id=department.id).first()
         form = AddOfficerForm(first_name='Test',
                               last_name='McTesty',
                               race='WHITE',
                               gender='M',
                               star_no=666,
-                              job_title='COMMANDER',
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1990)
         data = process_form_data(form.data)
@@ -1015,13 +1018,14 @@ def test_admin_adds_officer_with_letter_in_badge_no(mockdata, client, session):
         login_admin(client)
 
         department = random.choice(dept_choices())
+        job = Job.query.filter_by(department_id=department.id).first()
         form = AddOfficerForm(first_name='Test',
                               last_name='Testersly',
                               middle_initial='T',
                               race='WHITE',
                               gender='M',
                               star_no='T666',
-                              job_title='COMMANDER',
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1990)
         data = process_form_data(form.data)
@@ -1114,6 +1118,7 @@ def test_admin_can_add_new_officer_with_suffix(mockdata, client, session):
             LinkForm(url='http://www.pleasework.com', link_type='link').data,
             LinkForm(url='http://www.avideo/?v=2345jk', link_type='video').data
         ]
+        job = Job.query.filter_by(department_id=department.id).first()
         form = AddOfficerForm(first_name='Testy',
                               last_name='McTesty',
                               middle_initial='T',
@@ -1121,7 +1126,7 @@ def test_admin_can_add_new_officer_with_suffix(mockdata, client, session):
                               race='WHITE',
                               gender='M',
                               star_no=666,
-                              job_title='COMMANDER',
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1990,
                               links=links)
@@ -1162,6 +1167,7 @@ def test_officer_csv(mockdata, client, session):
         links = [
             LinkForm(url='http://www.pleasework.com', link_type='link').data,
         ]
+        job = Job.query.filter_by(department_id=department.id).filter(Job.job_title != 'Not Sure').first()
         form = AddOfficerForm(first_name='CKtVwe2gqhAIc',
                               last_name='FVkcjigWUeUyA',
                               middle_initial='T',
@@ -1169,7 +1175,7 @@ def test_officer_csv(mockdata, client, session):
                               race='WHITE',
                               gender='M',
                               star_no='90009',
-                              job_title='2',
+                              job_id=job.id,
                               department=department.id,
                               birth_year=1910,
                               links=links)
@@ -1192,7 +1198,7 @@ def test_officer_csv(mockdata, client, session):
         added_lines = [row for row in csv_reader if row["last name"] == form.last_name.data]
         assert len(added_lines) == 1
         assert form.first_name.data == added_lines[0]["first name"]
-        assert Job.query.get(form.job_title.data).job_title == added_lines[0]["job title"]
+        assert job.job_title == added_lines[0]["job title"]
         assert form.star_no.data == added_lines[0]["badge number"]
 
 
@@ -1333,14 +1339,13 @@ def test_browse_filtering_allows_good(client, mockdata, session):
         ]
         officer = Officer.query.filter_by(department_id=AC_DEPT).first()
         job = Job.query.filter_by(department_id=officer.department_id).first()
-        job_title = job.job_title
         form = AddOfficerForm(first_name='A',
                               last_name='A',
                               middle_initial='A',
                               race='WHITE',
                               gender='M',
                               star_no=666,
-                              job_title=job.id,
+                              job_id=job.id,
                               department=department_id,
                               birth_year=1990,
                               links=links)
@@ -1365,7 +1370,7 @@ def test_browse_filtering_allows_good(client, mockdata, session):
         # Check that added officer appears when filtering for this race, gender, rank and age
         form = BrowseForm(race='WHITE',
                           gender='M',
-                          rank=job_title,
+                          rank=job.job_title,
                           min_age=datetime.now().year - 1991,
                           max_age=datetime.now().year - 1989)
 
@@ -1380,10 +1385,166 @@ def test_browse_filtering_allows_good(client, mockdata, session):
         assert any("<dd>White</dd>" in token for token in filter_list)
 
         filter_list = rv.data.decode('utf-8').split("<dt>Job Title</dt>")[1:]
-        assert any("<dd>{}</dd>".format(job_title) in token for token in filter_list)
+        assert any("<dd>{}</dd>".format(job.job_title) in token for token in filter_list)
 
         filter_list = rv.data.decode('utf-8').split("<dt>Gender</dt>")[1:]
         assert any("<dd>Male</dd>" in token for token in filter_list)
+
+
+def test_browse_filtering_multiple_uiis(client, mockdata, session):
+    with current_app.test_request_context():
+        department_id = Department.query.first().id
+
+        # Add two officers
+        login_admin(client)
+        form = AddOfficerForm(first_name='Porkchops',
+                              last_name='McBacon',
+                              unique_internal_identifier='foo',
+                              department=department_id)
+        data = process_form_data(form.data)
+        rv = client.post(
+            url_for('main.add_officer'),
+            data=data,
+            follow_redirects=True
+        )
+        assert 'New Officer McBacon added' in rv.data.decode('utf-8')
+
+        form = AddOfficerForm(first_name='Bacon',
+                              last_name='McPorkchops',
+                              unique_internal_identifier='bar',
+                              department=department_id)
+        data = process_form_data(form.data)
+        rv = client.post(
+            url_for('main.add_officer'),
+            data=data,
+            follow_redirects=True
+        )
+        assert 'New Officer McPorkchops added' in rv.data.decode('utf-8')
+
+        # Check the officers were added to the database
+        assert Officer.query.filter_by(department_id=department_id).filter_by(unique_internal_identifier='foo').count() == 1
+        assert Officer.query.filter_by(department_id=department_id).filter_by(unique_internal_identifier='bar').count() == 1
+
+        # Check that added officers appear when filtering for both UIIs
+        form = BrowseForm(unique_internal_identifier='foo,bar', race=None, gender=None)
+        data = process_form_data(form.data)
+        rv = client.get(
+            url_for('main.list_officer', department_id=department_id),
+            query_string=data,
+            follow_redirects=True
+        )
+        assert 'McBacon' in rv.data.decode('utf-8')
+        assert 'McPorkchops' in rv.data.decode('utf-8')
+        assert 'foo' in rv.data.decode('utf-8')
+        assert 'bar' in rv.data.decode('utf-8')
+
+
+def test_browse_sort_by_last_name(client, mockdata):
+    with current_app.test_request_context():
+        department_id = Department.query.first().id
+        rv = client.get(
+            url_for('main.list_officer', department_id=department_id, order=0),
+            follow_redirects=True
+        )
+        response = rv.data.decode('utf-8')
+        officer_ids = re.findall(r'<a href="/officer/(\d+)">', response)
+        assert officer_ids is not None and len(officer_ids) == int(current_app.config['OFFICERS_PER_PAGE'])
+        for idx, officer_id in enumerate(officer_ids):
+            if idx + 1 < len(officer_ids):
+                officer = Officer.query.filter_by(id=officer_id).one()
+                next_officer_id = officer_ids[idx + 1]
+                next_officer = Officer.query.filter_by(id=next_officer_id).one()
+                assert officer.last_name <= next_officer.last_name
+
+
+def test_browse_sort_by_rank(client, mockdata):
+    with current_app.test_request_context():
+        department_id = Department.query.first().id
+        rv = client.get(
+            url_for('main.list_officer', department_id=department_id, order=1),
+            follow_redirects=True
+        )
+        response = rv.data.decode('utf-8')
+        officer_ids = re.findall(r'<a href="/officer/(\d+)">', response)
+        assert officer_ids is not None and len(officer_ids) == int(current_app.config['OFFICERS_PER_PAGE'])
+        for idx, officer_id in enumerate(officer_ids):
+            if idx + 1 < len(officer_ids):
+                officer = Officer.query.filter_by(id=officer_id).one()
+                next_officer_id = officer_ids[idx + 1]
+                next_officer = Officer.query.filter_by(id=next_officer_id).one()
+                officer_job = officer\
+                    .assignments\
+                    .order_by(Assignment.star_date.desc())\
+                    .first()\
+                    .job
+                next_officer_job = next_officer\
+                    .assignments\
+                    .order_by(Assignment.star_date.desc())\
+                    .first()\
+                    .job
+                assert officer_job.order >= next_officer_job.order
+
+
+def test_browse_sort_by_total_pay(client, mockdata):
+    with current_app.test_request_context():
+        department_id = Department.query.first().id
+        rv = client.get(
+            url_for('main.list_officer', department_id=department_id, order=2),
+            follow_redirects=True
+        )
+        response = rv.data.decode('utf-8')
+        officer_ids = re.findall(r'<a href="/officer/(\d+)">', response)
+        assert officer_ids is not None and len(officer_ids) == int(current_app.config['OFFICERS_PER_PAGE'])
+        for idx, officer_id in enumerate(officer_ids):
+            if idx + 1 < len(officer_ids):
+                officer = Officer.query.filter_by(id=officer_id).one()
+                next_officer_id = officer_ids[idx + 1]
+                next_officer = Officer.query.filter_by(id=next_officer_id).one()
+                officer_salary = officer.salaries[0]
+                next_officer_salary = next_officer.salaries[0]
+                officer_total_pay = officer_salary.salary + officer_salary.overtime_pay
+                next_officer_total_pay = next_officer_salary.salary + next_officer_salary.overtime_pay
+                assert officer_total_pay >= next_officer_total_pay
+
+
+def test_browse_sort_by_salary(client, mockdata):
+    with current_app.test_request_context():
+        department_id = Department.query.first().id
+        rv = client.get(
+            url_for('main.list_officer', department_id=department_id, order=3),
+            follow_redirects=True
+        )
+        response = rv.data.decode('utf-8')
+        officer_ids = re.findall(r'<a href="/officer/(\d+)">', response)
+        assert officer_ids is not None and len(officer_ids) == int(current_app.config['OFFICERS_PER_PAGE'])
+        for idx, officer_id in enumerate(officer_ids):
+            if idx + 1 < len(officer_ids):
+                officer = Officer.query.filter_by(id=officer_id).one()
+                next_officer_id = officer_ids[idx + 1]
+                next_officer = Officer.query.filter_by(id=next_officer_id).one()
+                officer_salary = officer.salaries[0]
+                next_officer_salary = next_officer.salaries[0]
+                assert officer_salary.salary >= next_officer_salary.salary
+
+
+def test_browse_sort_by_overtime_pay(client, mockdata):
+    with current_app.test_request_context():
+        department_id = Department.query.first().id
+        rv = client.get(
+            url_for('main.list_officer', department_id=department_id, order=4),
+            follow_redirects=True
+        )
+        response = rv.data.decode('utf-8')
+        officer_ids = re.findall(r'<a href="/officer/(\d+)">', response)
+        assert officer_ids is not None and len(officer_ids) == int(current_app.config['OFFICERS_PER_PAGE'])
+        for idx, officer_id in enumerate(officer_ids):
+            if idx + 1 < len(officer_ids):
+                officer = Officer.query.filter_by(id=officer_id).one()
+                next_officer_id = officer_ids[idx + 1]
+                next_officer = Officer.query.filter_by(id=next_officer_id).one()
+                officer_salary = officer.salaries[0]
+                next_officer_salary = next_officer.salaries[0]
+                assert officer_salary.overtime_pay >= next_officer_salary.overtime_pay
 
 
 def test_admin_can_upload_photos_of_dept_officers(mockdata, client, session, test_jpg_BytesIO):

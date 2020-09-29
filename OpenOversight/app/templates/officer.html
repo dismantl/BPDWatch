@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ officer.full_name() }} - BPD Watch{% endblock %}
 {% block meta %}
-  {% set job_title = officer.assignments[0].job.job_title if officer.assignments[0] and officer.assignments[0].job.job_title != 'Not Sure' else 'Employee' %}
+  {% set job_title = officer.job_title() if officer.job_title() and officer.job_title() != 'Not Sure' else 'Employee' %}
   {% set description = 'See detailed information about ' ~ officer.full_name() ~ ', ' ~ job_title ~ ' of the ' ~ officer.department.name ~ '.' %}
   {% set image_url = officer.image_url | default(url_for('static', filename='images/no_photos.png', _external=True)) %}
   <meta name="description" content="{{ description }}">
@@ -84,9 +84,9 @@
   <div class="page-header">
       <ol class="breadcrumb">
           <li><a href="{{url_for('main.list_officer',department_id=officer.department.id)}}">{{ officer.department.name|title }}</a></li>
-          <li class="active">{% include 'partials/officer_name.html' %}</li>
+          <li class="active">{{ officer.full_name() }}</li>
       </ol>
-      <h1>Officer Detail: <b>{% include 'partials/officer_name.html' %}</b></h1>
+      <h1>Officer Detail: <b>{{ officer.full_name() }}</b></h1>
   </div>
 
   <div class="row">
@@ -124,7 +124,7 @@
             <tbody>
               <tr>
                 <td><b>Name</b></td>
-                <td>{% include 'partials/officer_name.html' %}</td>
+                <td>{{ officer.full_name() }}</td>
               </tr>
               <tr>
                 <td><b>BPD Watch ID</b></td>
