@@ -23,10 +23,10 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-heading{% if not form_data['first_name'] %} collapsed{% endif %}" data-toggle="collapse" data-target="#filter-first_name">
+          <div class="panel-heading" data-toggle="collapse" data-target="#filter-first_name">
             <h3 class="panel-title accordion-toggle">First name</h3>
           </div>
-          <div class="collapse{% if form_data['first_name'] %} in{% endif %}" id="filter-first_name">
+          <div class="collapse in" id="filter-first_name">
             <div class="panel-body">
               <div class="form-group">
                 <input type="text" class="form-control" id="first_name" name="first_name" value="{{ form_data['first_name'] or '' }}" />

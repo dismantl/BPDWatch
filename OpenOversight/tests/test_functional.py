@@ -234,4 +234,4 @@ def test_edit_officer_form_coerces_none_race_or_gender_to_not_sure(mockdata, bro
     select = Select(browser.find_element_by_id("race"))
     selected_option = select.first_selected_option
     selected_text = selected_option.text
-    assert selected_text == 'Not Sure'
+    assert selected_text == 'Not Specified'
